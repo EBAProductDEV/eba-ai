@@ -1,0 +1,10 @@
+spring:
+  application.name: eba-ai-chat
+  datasource:
+    url: jdbc:mysql://localhost:3306/zzyl?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+    username: ${EBA_DB_MYSQL_USER}
+    password: ${EBA_DB_MYSQL_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  ai:
+    dashscope:
+      api-key: ${EBA_AI_API_KEY}
