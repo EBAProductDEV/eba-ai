@@ -10,3 +10,4 @@ spring:
   ai:
     dashscope:
       api-key: ${EBA_AI_API_KEY}
+
