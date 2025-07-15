@@ -19,5 +19,6 @@
 
     <modules>
         <module>eba-ai-chat</module>
+        <module>eba-ai-stdv6-rag</module>
     </modules>
 </project>
