@@ -11,3 +11,10 @@ spring:
     dashscope:
       api-key: ${EBA_AI_API_KEY}
 
+mybatis-plus:
+  global-config:
+    db-config:
+        id-type: ASSIGN_ID  # id生成规则为雪花算法
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 打印 SQL 到控制台（开发用）
+    map-underscore-to-camel-case: true  # 开启驼峰命名自动映射
