@@ -1,5 +1,7 @@
 package com.eba.rag.util;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,6 +11,7 @@ import java.util.List;
  * @CreateTime: 2025-07-16 15:19:38
  * @Desc:
  */
+@Slf4j
 public class FileScannerUtil {
     /**
      * 扫描指定目录下的所有源码文件（递归）

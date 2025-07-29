@@ -74,6 +74,18 @@
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
         </dependency>
+
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-starter</artifactId>
+            <version>1.0.0-M3.3</version>
+            <exclusions>
+                <exclusion>
+                    <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
+                    <groupId>com.alibaba.cloud.ai</groupId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <!-- MyBatis-Plus -->
         <dependency>
             <groupId>com.baomidou</groupId>

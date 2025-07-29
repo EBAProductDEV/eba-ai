@@ -23,4 +23,11 @@ public interface IAiCodeChunksService extends IService<AiCodeChunks> {
      */
     boolean saveCodeChunksBatch(List<AiCodeChunks> aiCodeChunks);
 
+    /**
+     * 获取代码片段集合
+     * @param filePath
+     * @return
+     */
+    List<AiCodeChunks> getCodeChunkList(String filePath);
+
 }
