@@ -1,6 +1,7 @@
 package com.eba.ai.hello.controller;
 
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +21,9 @@ public class ChatController {
     @Autowired
     @Qualifier("dashScopeChatClient")
     private ChatClient dashScopeChatClient;
+
+    @Autowired
+    private ChatModel chatModel;
 
 
     /**

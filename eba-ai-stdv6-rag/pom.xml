@@ -2,30 +2,16 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.3</version>
-        <relativePath/> <!-- lookup parent from repository -->
-    </parent>
     <groupId>com.eba</groupId>
     <artifactId>eba-ai-stdv6-rag</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>eba-ai-stdv6-rag</name>
     <description>eba-ai-stdv6-rag</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
+    <parent>
+        <groupId>com.ebaProduct</groupId>
+        <artifactId>eba-ai</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
     <properties>
         <java.version>17</java.version>
     </properties>
@@ -69,23 +55,30 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
-        <!-- Spring AI Alibaba DashScope (大模型) -->
+
+        <!-- ===== DashScope（阿里大模型） ===== -->
         <dependency>
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
         </dependency>
 
+        <!-- ===== Agent 框架（可选） ===== -->
         <dependency>
             <groupId>com.alibaba.cloud.ai</groupId>
-            <artifactId>spring-ai-alibaba-starter</artifactId>
-            <version>1.0.0-M3.3</version>
-            <exclusions>
-                <exclusion>
-                    <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
-                    <groupId>com.alibaba.cloud.ai</groupId>
-                </exclusion>
-            </exclusions>
+            <artifactId>spring-ai-alibaba-agent-framework</artifactId>
         </dependency>
+        <!-- ===== ollama 本地大模型 =====     -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-ollama</artifactId>
+        </dependency>
+
+        <!-- ===== redisStack =====   -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-redis</artifactId>
+        </dependency>
+
         <!-- MyBatis-Plus -->
         <dependency>
             <groupId>com.baomidou</groupId>
@@ -106,17 +99,6 @@
             <url>https://maven.aliyun.com/repository/public</url>
         </repository>
     </repositories>
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>com.alibaba.cloud.ai</groupId>
-                <artifactId>spring-ai-alibaba-bom</artifactId>
-                <version>1.0.0.2</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <build>
         <plugins>
