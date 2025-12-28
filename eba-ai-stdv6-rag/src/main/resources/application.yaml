@@ -1,0 +1,35 @@
+server:
+  port: 10081
+  servlet:
+    encoding:
+      enabled: true
+      force: true
+      charset: UTF-8  # 防止本地大模型输出乱码
+spring:
+  application.name: eba-ai-stdv6-rag
+  autoconfigure:
+      exclude:
+        - org.springframework.ai.vectorstore.redis.autoconfigure.RedisVectorStoreAutoConfiguration
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/eba_ai?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+    username: ${EBA_DB_MYSQL_USER}
+    password: ${EBA_DB_MYSQL_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  ai:
+    # 阿里云平台
+    dashscope:
+      api-key: ${EBA_AI_API_KEY}
+    #   ollama本地大模型
+    ollama:
+      chat:
+        model: deepseek-r1:1.5b
+      base-url: http://localhost:11434
+
+mybatis-plus:
+  global-config:
+    db-config:
+        id-type: ASSIGN_ID  # id生成规则为雪花算法
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 打印 SQL 到控制台（开发用）
+    map-underscore-to-camel-case: true  # 开启驼峰命名自动映射
