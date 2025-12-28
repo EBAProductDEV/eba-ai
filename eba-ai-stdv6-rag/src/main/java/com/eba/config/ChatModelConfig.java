@@ -1,4 +1,4 @@
-package com.eba.agent.config;
+package com.eba.config;
 
 import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
@@ -22,7 +22,7 @@ public class ChatModelConfig {
     public ChatModel ollamaQwenModel() {
         return OllamaChatModel.builder()
                 .ollamaApi(OllamaApi.builder().baseUrl("http://127.0.0.1:11434").build())
-                .defaultOptions(OllamaChatOptions.builder().model("qwen3-vl:2b").build())
+                .defaultOptions(OllamaChatOptions.builder().model("deepseek-r1:1.5b").build())
                 .build();
     }
 

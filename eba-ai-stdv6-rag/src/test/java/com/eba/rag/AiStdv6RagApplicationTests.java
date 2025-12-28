@@ -1,7 +1,7 @@
 package com.eba.rag;
 
+import com.eba.AiStdv6RagApplication;
 import com.eba.rag.util.FileScannerUtil;
-import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 

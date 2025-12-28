@@ -1,4 +1,4 @@
-package com.eba.agent.config;
+package com.eba.config;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;

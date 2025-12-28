@@ -1,4 +1,4 @@
-package com.eba.agent.config;
+package com.eba.config;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import org.springframework.ai.chat.model.ChatModel;

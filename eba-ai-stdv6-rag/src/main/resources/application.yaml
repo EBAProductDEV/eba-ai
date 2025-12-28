@@ -1,5 +1,10 @@
 server:
   port: 10081
+  servlet:
+    encoding:
+      enabled: true
+      force: true
+      charset: UTF-8  # 防止本地大模型输出乱码
 spring:
   application.name: eba-ai-stdv6-rag
   autoconfigure:
@@ -18,7 +23,7 @@ spring:
     #   ollama本地大模型
     ollama:
       chat:
-        model: qwen3-vl:2b
+        model: deepseek-r1:1.5b
       base-url: http://localhost:11434
 
 mybatis-plus:
