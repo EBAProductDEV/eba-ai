@@ -1,4 +1,4 @@
-package com.eba.agent;
+package com.eba.agent.vo;
 
 import lombok.Data;
 
@@ -10,4 +10,6 @@ import lombok.Data;
 @Data
 public class MessageVO {
   private String question;
+
+  private String prompt;
 }

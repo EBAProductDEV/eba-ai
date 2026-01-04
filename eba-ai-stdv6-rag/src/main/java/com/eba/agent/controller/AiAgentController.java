@@ -1,11 +1,10 @@
 package com.eba.agent.controller;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
-import com.eba.agent.MessageVO;
+import com.eba.agent.vo.MessageVO;
 import jakarta.annotation.Resource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
@@ -27,7 +26,7 @@ public class AiAgentController {
 
     @Resource(name = "dashScopeQwenModel")
     private ChatModel chatModel;
-    @Resource(name = "dashScopeQwenClient")
+    @Resource(name = "ollamaQwenClient")
     private ChatClient chatClient;
     @Resource
     @Qualifier("dashScopeQwenAgent")
@@ -38,11 +37,12 @@ public class AiAgentController {
         // 简单调用
         return chatClient.prompt().messages().user( question).call().content();
     }
-    @GetMapping("/chat")
-    public Flux<String> react(@RequestParam String question) {
+    @PostMapping("/chat")
+    public Flux<String> react(@RequestBody MessageVO vo) {
+        String prompt = vo.getPrompt();
         // 流式输出
         return chatClient
-                .prompt(question).stream().content();
+                .prompt(prompt).stream().content();
     }
     // 提示词模板
     @GetMapping("/prompt/template")
