@@ -1,0 +1,34 @@
+﻿server:
+  port: 10081
+  servlet:
+    encoding:
+      enabled: true
+      force: true
+      charset: UTF-8 # 防止本地大模型输出乱码
+
+spring:
+  application:
+    name: qctv1-ai-stdv6-rag
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.vectorstore.redis.autoconfigure.RedisVectorStoreAutoConfiguration
+  datasource:
+    url: jdbc:mysql://localhost:3306/qctv1_ai?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+    username: ${QCTV1_DB_MYSQL_USER}
+    password: ${QCTV1_DB_MYSQL_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  ai:
+    dashscope:
+      api-key: ${QCTV1_AI_API_KEY}
+    ollama:
+      chat:
+        model: deepseek-r1:1.5b
+      base-url: http://localhost:11434
+
+mybatis-plus:
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID # id 生成规则：雪花算法
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl # 打印 SQL 到控制台（开发用）
+    map-underscore-to-camel-case: true # 开启驼峰命名自动映射

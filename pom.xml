@@ -5,21 +5,21 @@
     <modelVersion>4.0.0</modelVersion>
     <!--父依赖POM-->
     <parent>
-        <groupId>com.ebaProduct</groupId>
-        <artifactId>EBAProduct</artifactId>
+        <groupId>com.qctv1</groupId>
+        <artifactId>qctv1-product</artifactId>
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
-    <groupId>com.ebaProduct</groupId>
-    <artifactId>eba-ai</artifactId>
+    <groupId>com.qctv1</groupId>
+    <artifactId>qctv1-ai</artifactId>
     <version>1.0-SNAPSHOT</version>
 
     <packaging>pom</packaging>
-    <name>eba-ai</name>
+    <name>qctv1-ai</name>
 
     <modules>
-        <module>eba-ai-chat</module>
-        <module>eba-ai-stdv6-rag</module>
+        <module>qctv1-ai-chat</module>
+        <module>qctv1-ai-stdv6-rag</module>
     </modules>
     <!--  子依赖  -->
     <!-- ========== 统一版本定义 ========== -->
@@ -41,6 +41,7 @@
     <!-- ========== 统一依赖版本管理（关键） ========== -->
     <dependencyManagement>
         <dependencies>
+
 
             <!-- Spring Boot 官方 BOM -->
             <dependency>
