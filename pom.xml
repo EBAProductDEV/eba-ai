@@ -19,7 +19,7 @@
 
     <modules>
         <module>qctv1-ai-chat</module>
-        <module>qctv1-ai-stdv6-rag</module>
+        <module>qctv1-ai-rag</module>
     </modules>
     <!--  子依赖  -->
     <!-- ========== 统一版本定义 ========== -->
