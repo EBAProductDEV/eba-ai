@@ -1,10 +1,11 @@
 package com.qctv1.ai.hello.controller;
 
-import com.alibaba.cloud.ai.dashscope.api.DashScopeImageApi;
 import org.springframework.ai.image.ImageModel;
 import org.springframework.ai.image.ImagePrompt;
 import org.springframework.ai.image.ImageResponse;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -17,9 +18,11 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/image")
+@ConditionalOnBean(ImageModel.class)
 public class ImageController {
 
     @Autowired
+    @Qualifier("openAiImageModel")
     private ImageModel imageModel;
 
     @GetMapping("/generate")

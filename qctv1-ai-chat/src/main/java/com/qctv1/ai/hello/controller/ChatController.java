@@ -1,7 +1,7 @@
 package com.qctv1.ai.hello.controller;
 
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,24 +14,20 @@ import org.springframework.web.bind.annotation.RestController;
  * @CreateTime: 2025-07-08 18:33:51
  * @Desc:
  */
-@RestController
+@RestController("helloChatController")
 @RequestMapping("/hello")
 public class ChatController {
-
-    @Autowired
-    @Qualifier("dashScopeChatClient")
-    private ChatClient dashScopeChatClient;
-
-    @Autowired
-    private ChatModel chatModel;
-
-
-    /**
-     * ChatClient 简单调用
-     */
-    @GetMapping("/simple/chat")
-    public String simpleChat(@RequestParam(value = "query", defaultValue = "你好，很高兴认识你，能简单介绍一下自己吗？")String query) {
-
-        return dashScopeChatClient.prompt(query).call().content();
-    }
+//
+//    @Autowired
+//    @Qualifier("dashScopeChatClient")
+//    private ChatClient dashScopeChatClient;
+//
+//    /**
+//     * ChatClient 简单调用
+//     */
+//    @GetMapping("/simple/chat")
+//    public String simpleChat(@RequestParam(value = "query", defaultValue = "你好，很高兴认识你，能简单介绍一下自己吗？")String query) {
+//        AssistantMessage assistantMessage = new AssistantMessage(query);
+//        return dashScopeChatClient.prompt(query).call().content();
+//    }
 }

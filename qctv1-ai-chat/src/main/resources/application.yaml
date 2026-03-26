@@ -1,16 +1,36 @@
 server:
   port: 10082
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
 spring:
-  application.name: qctv1-ai-chat
+  application:
+    name: qctv1-ai-chat
+  main:
+    web-application-type: reactive
+  autoconfigure:
+    exclude:
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeImageAutoConfiguration
   datasource:
     url: jdbc:mysql://localhost:3306/qctv1_ai?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
     username: ${QCTV1_DB_MYSQL_USER}
     password: ${QCTV1_DB_MYSQL_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   ai:
+    openai:
+      api-key: ${XQCLOUD_API_KEY:${OPENAI_API_KEY:}}
+      base-url: "https://chat.xqcloud.net/v1"
+      completions-path: "/chat/completions"
+      chat:
+        options:
+          model: "gpt-5.3-codex"
     dashscope:
-      api-key: ${QCTV1_AI_API_KEY}
-      image:
-        retry:
-          max-attempts: 5
-          delay: 3000 # 每次重试间隔 3 秒
+      api-key: ${XQCLOUD_API_KEY}
+
+app:
+  ai:
+    connect-timeout-ms: 10000
+    read-timeout-ms: 180000

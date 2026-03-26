@@ -20,6 +20,7 @@ spring:
   ai:
     dashscope:
       api-key: ${QCTV1_AI_API_KEY}
+
     ollama:
       chat:
         model: deepseek-r1:1.5b

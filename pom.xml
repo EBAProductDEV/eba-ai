@@ -6,7 +6,7 @@
     <!--父依赖POM-->
     <parent>
         <groupId>com.qctv1</groupId>
-        <artifactId>qctv1-product</artifactId>
+        <artifactId>qctv1</artifactId>
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
