@@ -26,7 +26,7 @@ spring:
       completions-path: "/chat/completions"
       chat:
         options:
-          model: "gpt-5.3-codex"
+          model: "gpt-5.3-codex-spark"
     dashscope:
       api-key: ${XQCLOUD_API_KEY}
 

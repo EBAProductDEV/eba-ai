@@ -28,7 +28,7 @@ public class OpenAIModel {
             @Value("${spring.ai.openai.base-url}") String baseUrl,
             @Value("${spring.ai.openai.api-key:}") String apiKey,
             @Value("${spring.ai.openai.completions-path:/chat/completions}") String completionsPath,
-            @Value("${spring.ai.openai.chat.options.model:gpt-5.3}") String model,
+            @Value("${spring.ai.openai.chat.options.model:gpt-5.3-codex-spark}") String model,
             @Value("${app.ai.connect-timeout-ms:10000}") int connectTimeoutMs,
             @Value("${app.ai.read-timeout-ms:180000}") int readTimeoutMs
     ) {
