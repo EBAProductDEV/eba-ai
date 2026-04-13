@@ -10,7 +10,7 @@ spring:
   application:
     name: qctv1-ai-rag
   profiles:
-    default: local
+    default: nacos
   autoconfigure:
     exclude:
       - org.springframework.ai.vectorstore.redis.autoconfigure.RedisVectorStoreAutoConfiguration

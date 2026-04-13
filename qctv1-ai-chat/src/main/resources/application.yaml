@@ -12,7 +12,7 @@ spring:
   main:
     web-application-type: reactive
   profiles:
-    default: local
+    default: nacos
   autoconfigure:
     exclude:
       - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeImageAutoConfiguration
