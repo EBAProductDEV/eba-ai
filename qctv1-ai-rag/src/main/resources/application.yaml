@@ -1,14 +1,16 @@
-﻿server:
+server:
   port: 10081
   servlet:
     encoding:
       enabled: true
       force: true
-      charset: UTF-8 # 防止本地大模型输出乱码
+      charset: UTF-8
 
 spring:
   application:
-    name: qctv1-ai-stdv6-rag
+    name: qctv1-ai-rag
+  profiles:
+    default: local
   autoconfigure:
     exclude:
       - org.springframework.ai.vectorstore.redis.autoconfigure.RedisVectorStoreAutoConfiguration
@@ -20,7 +22,6 @@ spring:
   ai:
     dashscope:
       api-key: ${QCTV1_AI_API_KEY}
-
     ollama:
       chat:
         model: deepseek-r1:1.5b
@@ -29,7 +30,7 @@ spring:
 mybatis-plus:
   global-config:
     db-config:
-      id-type: ASSIGN_ID # id 生成规则：雪花算法
+      id-type: ASSIGN_ID
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl # 打印 SQL 到控制台（开发用）
-    map-underscore-to-camel-case: true # 开启驼峰命名自动映射
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    map-underscore-to-camel-case: true

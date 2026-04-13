@@ -1,0 +1,23 @@
+spring:
+  config:
+    import:
+      - optional:nacos:qctv1-ai-rag.yaml?refreshEnabled=true
+      - optional:nacos:qctv1-common.yaml?refreshEnabled=true
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        service: ${spring.application.name}
+        health-indicator:
+          enabled: true
+      config:
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        file-extension: yaml
+        refresh-enabled: true
+        health-indicator:
+          enabled: true

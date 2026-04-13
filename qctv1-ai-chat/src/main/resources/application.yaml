@@ -11,6 +11,8 @@ spring:
     name: qctv1-ai-chat
   main:
     web-application-type: reactive
+  profiles:
+    default: local
   autoconfigure:
     exclude:
       - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeImageAutoConfiguration

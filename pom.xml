@@ -3,7 +3,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
-    <!--父依赖POM-->
+
     <parent>
         <groupId>com.qctv1</groupId>
         <artifactId>qctv1</artifactId>
@@ -21,29 +21,21 @@
         <module>qctv1-ai-chat</module>
         <module>qctv1-ai-rag</module>
     </modules>
-    <!--  子依赖  -->
-    <!-- ========== 统一版本定义 ========== -->
+
     <properties>
         <java.version>17</java.version>
-
-        <!-- Spring -->
         <spring-boot.version>3.5.3</spring-boot.version>
+        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
         <spring-ai.version>1.1.0</spring-ai.version>
-
-        <!-- Alibaba AI -->
         <spring-ai-alibaba.version>1.1.0.0-RC2</spring-ai-alibaba.version>
-
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
-    <!-- ========== 统一依赖版本管理（关键） ========== -->
     <dependencyManagement>
         <dependencies>
-
-
-            <!-- Spring Boot 官方 BOM -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -51,8 +43,20 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-
-            <!-- Spring AI 官方 BOM -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+                <version>${spring-cloud-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
@@ -60,47 +64,38 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-
-            <!-- Alibaba AI 版本锁定 -->
             <dependency>
                 <groupId>com.alibaba.cloud.ai</groupId>
                 <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
                 <version>${spring-ai-alibaba.version}</version>
             </dependency>
-
             <dependency>
                 <groupId>com.alibaba.cloud.ai</groupId>
                 <artifactId>spring-ai-alibaba-agent-framework</artifactId>
                 <version>${spring-ai-alibaba.version}</version>
             </dependency>
-
         </dependencies>
     </dependencyManagement>
 
-    <!-- ========== 仓库 ========== -->
     <repositories>
         <repository>
             <id>aliyun-public</id>
             <name>Aliyun Public</name>
             <url>https://maven.aliyun.com/repository/public</url>
         </repository>
-        <!-- Spring Milestone Repository for milestones -->
         <repository>
             <id>spring-milestones</id>
             <url>https://repo.spring.io/milestone</url>
         </repository>
-        <!-- Spring Snapshot Repository for snapshots -->
         <repository>
             <id>spring-snapshots</id>
             <url>https://repo.spring.io/snapshot</url>
         </repository>
     </repositories>
 
-    <!-- ========== 插件管理（子模块直接用） ========== -->
     <build>
         <pluginManagement>
             <plugins>
-
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
@@ -117,13 +112,11 @@
                         </annotationProcessorPaths>
                     </configuration>
                 </plugin>
-
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring-boot.version}</version>
                 </plugin>
-
             </plugins>
         </pluginManagement>
     </build>
