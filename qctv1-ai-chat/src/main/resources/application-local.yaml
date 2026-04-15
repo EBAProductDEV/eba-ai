@@ -1,5 +1,11 @@
 spring:
   cloud:
+    discovery:
+      client:
+        simple:
+          instances:
+            qctv1-iam:
+              - uri: http://localhost:10083
     nacos:
       config:
         enabled: false
