@@ -30,7 +30,11 @@ spring:
         options:
           model: "gpt-5.3-codex-spark"
     dashscope:
-      api-key: ${XQCLOUD_API_KEY}
+      api-key: "sk-949a3177f9e540868847b9074697d144"
+      chat:
+        options:
+          model: "qwen3.5-35b-a3b"
+
 
 app:
   ai:

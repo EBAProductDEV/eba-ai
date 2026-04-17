@@ -56,4 +56,5 @@ public class OpenAIModel {
                 .defaultOptions(OpenAiChatOptions.builder().model(model).build())
                 .build();
     }
+
 }
