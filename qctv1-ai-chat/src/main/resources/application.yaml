@@ -17,10 +17,16 @@ spring:
     exclude:
       - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeImageAutoConfiguration
   datasource:
-    url: jdbc:mysql://localhost:3306/qctv1_ai?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+    url: jdbc:mysql://localhost:3306/qctv1-dev?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
     username: ${QCTV1_DB_MYSQL_USER}
     password: ${QCTV1_DB_MYSQL_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${QCTV1_REDIS_HOST:localhost}
+      port: ${QCTV1_REDIS_PORT:6379}
+      password: ${QCTV1_REDIS_PASSWORD:}
+      database: ${QCTV1_REDIS_DATABASE:0}
   ai:
     openai:
       api-key: ${XQCLOUD_API_KEY:${OPENAI_API_KEY:}}
@@ -40,3 +46,9 @@ app:
   ai:
     connect-timeout-ms: 10000
     read-timeout-ms: 180000
+    chat:
+      redis-ttl-days: 7
+      recent-message-limit: 12
+      prompt-round-limit: 6
+      summary-trigger-initial-count: 6
+      summary-trigger-step: 4
