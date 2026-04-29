@@ -1,0 +1,74 @@
+server:
+  # 10083 已被 qctv1-iam 占用；短剧服务使用 10084，网关本地路由同步指向该端口。
+  port: 10084
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  application:
+    name: qctv1-ai-drama
+  profiles:
+    # 默认 local，避免本地启动短剧服务时强依赖 Nacos。
+    default: nacos
+  datasource:
+    url: jdbc:mysql://${QCTV1_DB_MYSQL_HOST:localhost}:${QCTV1_DB_MYSQL_PORT:3306}/qctv1-dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=utf8
+    username: ${QCTV1_DB_MYSQL_USER:root}
+    password: ${QCTV1_DB_MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+app:
+  ai:
+    drama:
+      # 固定使用中文素材根目录。代码会在启动时自动创建目录，接口读取时会校验路径必须留在该根目录内。
+      asset-root: "D:/AI视频"
+      text:
+        provider: openai-compatible
+        base-url: ${DRAMA_TEXT_BASE_URL:}
+        api-key: ${DRAMA_TEXT_API_KEY:}
+        model: ${DRAMA_TEXT_MODEL:}
+      image:
+        provider: openai-compatible
+        base-url: ${DRAMA_IMAGE_BASE_URL:}
+        api-key: ${DRAMA_IMAGE_API_KEY:}
+        model: ${DRAMA_IMAGE_MODEL:}
+      video:
+        provider: openai-compatible
+        base-url: ${DRAMA_VIDEO_BASE_URL:}
+        api-key: ${DRAMA_VIDEO_API_KEY:}
+        model: ${DRAMA_VIDEO_MODEL:}
+      embedding:
+        provider: openai-compatible
+        base-url: ${DRAMA_EMBEDDING_BASE_URL:}
+        api-key: ${DRAMA_EMBEDDING_API_KEY:}
+        model: ${DRAMA_EMBEDDING_MODEL:}
+      vector-store:
+        type: redis-stack
+        index-name: qctv1_ai_drama_chunk_idx
+        key-prefix: "qctv1:ai:drama:chunk:"
+        embedding-dimension: 1536
+        distance-metric: COSINE
+
+mybatis-plus:
+  global-config:
+    db-config:
+      id-type: auto
+  configuration:
+    map-underscore-to-camel-case: true

@@ -20,6 +20,7 @@
     <modules>
         <module>qctv1-ai-chat</module>
         <module>qctv1-ai-rag</module>
+        <module>qctv1-ai-drama</module>
     </modules>
 
     <properties>
@@ -121,3 +122,4 @@
         </pluginManagement>
     </build>
 </project>
+
