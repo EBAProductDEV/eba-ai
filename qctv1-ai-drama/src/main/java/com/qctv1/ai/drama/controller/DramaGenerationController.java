@@ -1,17 +1,36 @@
 package com.qctv1.ai.drama.controller;
 
+import com.qctv1.ai.drama.dto.DramaStoryAssistantChatRequest;
+import com.qctv1.ai.drama.dto.DramaEpisodeScriptSaveRequest;
+import com.qctv1.ai.drama.dto.DramaEpisodeStepCompleteRequest;
+import com.qctv1.ai.drama.dto.DramaStoryGenerateRequest;
+import com.qctv1.ai.drama.dto.DramaStoryBriefRequest;
 import com.qctv1.ai.drama.dto.GenerateRequest;
 import com.qctv1.ai.drama.service.DramaGenerationService;
 import com.qctv1.ai.drama.service.DramaSeriesService;
+import com.qctv1.ai.drama.service.DramaTaskCenterService;
 import com.qctv1.ai.drama.support.ApiResponse;
 import com.qctv1.ai.drama.vo.DramaEpisodeDetailVo;
+import com.qctv1.ai.drama.vo.DramaSeriesDetailVo;
+import com.qctv1.ai.drama.vo.DramaStoryAssistantChatVo;
+import com.qctv1.ai.drama.vo.DramaStoryBriefVo;
+import com.qctv1.ai.drama.vo.DramaTaskCenterVo;
 import com.qctv1.ai.drama.vo.DramaTaskVo;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/drama")
@@ -19,15 +38,67 @@ public class DramaGenerationController {
 
     private final DramaGenerationService generationService;
     private final DramaSeriesService seriesService;
+    private final DramaTaskCenterService taskCenterService;
 
-    public DramaGenerationController(DramaGenerationService generationService, DramaSeriesService seriesService) {
+    public DramaGenerationController(
+            DramaGenerationService generationService,
+            DramaSeriesService seriesService,
+            DramaTaskCenterService taskCenterService
+    ) {
         this.generationService = generationService;
         this.seriesService = seriesService;
+        this.taskCenterService = taskCenterService;
     }
 
     @PostMapping("/series/{seriesId}/story/generate")
     public ApiResponse<DramaTaskVo> generateStory(@PathVariable Long seriesId, @RequestBody(required = false) GenerateRequest request) {
         return ApiResponse.success(generationService.generateStory(seriesId, request == null ? new GenerateRequest(null, null) : request));
+    }
+
+    @PostMapping("/series/{seriesId}/story/brief")
+    public ApiResponse<DramaStoryBriefVo> prepareStoryBrief(@PathVariable Long seriesId, @RequestBody(required = false) DramaStoryBriefRequest request) {
+        return ApiResponse.success(generationService.prepareStoryBrief(seriesId, request == null ? new DramaStoryBriefRequest(null) : request));
+    }
+
+    @PostMapping("/series/{seriesId}/story/generate-content")
+    public ApiResponse<DramaSeriesDetailVo> generateStoryContent(@PathVariable Long seriesId, @RequestBody(required = false) DramaStoryGenerateRequest request) {
+        return ApiResponse.success(generationService.generateStoryContent(seriesId, request == null ? new DramaStoryGenerateRequest(null, null) : request));
+    }
+
+    @PostMapping("/series/{seriesId}/story/assistant/chat")
+    public ApiResponse<DramaStoryAssistantChatVo> chatWithStoryAssistant(@PathVariable Long seriesId, @RequestBody(required = false) DramaStoryAssistantChatRequest request) {
+        return ApiResponse.success(generationService.chatWithStoryAssistant(seriesId, request));
+    }
+
+    @PostMapping(value = "/series/{seriesId}/story/assistant/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamChatWithStoryAssistant(@PathVariable Long seriesId, @RequestBody(required = false) DramaStoryAssistantChatRequest request) {
+        SseEmitter emitter = new SseEmitter(300_000L);
+        CompletableFuture.runAsync(() -> {
+            try {
+                DramaStoryAssistantChatVo result = generationService.chatWithStoryAssistant(seriesId, request);
+                streamAnswer(emitter, result.answer());
+                emitter.send(SseEmitter.event().name("result").data(result));
+                emitter.send(SseEmitter.event().name("done").data(Map.of("done", true)));
+                emitter.complete();
+            } catch (Exception ex) {
+                try {
+                    emitter.send(SseEmitter.event().name("error").data(Map.of("message", ex.getMessage() == null ? "AI 助手调用失败" : ex.getMessage())));
+                } catch (IOException ignored) {
+                    // 客户端已断开时无需再处理。
+                }
+                emitter.completeWithError(ex);
+            }
+        });
+        return emitter;
+    }
+
+    private void streamAnswer(SseEmitter emitter, String answer) throws IOException {
+        String text = answer == null ? "" : answer;
+        int chunkSize = 24;
+        for (int start = 0; start < text.length(); start += chunkSize) {
+            int end = Math.min(start + chunkSize, text.length());
+            emitter.send(SseEmitter.event().name("chunk").data(text.substring(start, end)));
+        }
     }
 
     @PostMapping("/series/{seriesId}/episodes/generate")
@@ -45,9 +116,44 @@ public class DramaGenerationController {
         return ApiResponse.success(generationService.generateScript(episodeId, request == null ? new GenerateRequest(null, null) : request));
     }
 
+    @PostMapping("/episodes/{episodeId}/novel/generate")
+    public ApiResponse<DramaEpisodeDetailVo> generateNovelContent(@PathVariable Long episodeId, @RequestBody(required = false) GenerateRequest request) {
+        return ApiResponse.success(generationService.generateNovelContent(episodeId, request == null ? new GenerateRequest(null, null) : request));
+    }
+
+    @PutMapping("/episodes/{episodeId}/script")
+    public ApiResponse<DramaEpisodeDetailVo> saveScript(@PathVariable Long episodeId, @RequestBody(required = false) DramaEpisodeScriptSaveRequest request) {
+        return ApiResponse.success(generationService.saveScript(episodeId, request));
+    }
+
+    @PostMapping("/episodes/{episodeId}/scenes/generate")
+    public ApiResponse<DramaTaskVo> generateScenes(@PathVariable Long episodeId, @RequestBody(required = false) GenerateRequest request) {
+        return ApiResponse.success(generationService.generateScenes(episodeId, request == null ? new GenerateRequest(null, null) : request));
+    }
+
+    @PutMapping("/episodes/{episodeId}/workflow/complete")
+    public ApiResponse<DramaEpisodeDetailVo> completeEpisodeStep(@PathVariable Long episodeId, @RequestBody(required = false) DramaEpisodeStepCompleteRequest request) {
+        return ApiResponse.success(generationService.completeEpisodeStep(episodeId, request));
+    }
+
     @PostMapping("/episodes/{episodeId}/shots/generate")
     public ApiResponse<DramaTaskVo> generateShots(@PathVariable Long episodeId, @RequestBody(required = false) GenerateRequest request) {
         return ApiResponse.success(generationService.generateShots(episodeId, request == null ? new GenerateRequest(null, null) : request));
+    }
+
+    @PostMapping("/episodes/{episodeId}/dialogues/generate")
+    public ApiResponse<DramaTaskVo> generateDialogues(@PathVariable Long episodeId, @RequestBody(required = false) GenerateRequest request) {
+        return ApiResponse.success(generationService.generateDialogues(episodeId, request == null ? new GenerateRequest(null, null) : request));
+    }
+
+    @PostMapping("/episodes/{episodeId}/scene-images/generate")
+    public ApiResponse<List<DramaTaskVo>> generateEpisodeSceneImages(@PathVariable Long episodeId) {
+        return ApiResponse.success(generationService.generateEpisodeSceneImages(episodeId));
+    }
+
+    @PostMapping("/episodes/{episodeId}/shot-images/generate")
+    public ApiResponse<List<DramaTaskVo>> generateEpisodeShotImages(@PathVariable Long episodeId) {
+        return ApiResponse.success(generationService.generateEpisodeShotImages(episodeId));
     }
 
     @PostMapping("/characters/{characterId}/image/generate")
@@ -70,8 +176,13 @@ public class DramaGenerationController {
         return ApiResponse.success(generationService.generateShotVideo(shotId, request == null ? new GenerateRequest(null, null) : request));
     }
 
-    @GetMapping("/tasks/{taskId}")
+    @GetMapping("/tasks/{taskId:\\d+}")
     public ApiResponse<DramaTaskVo> task(@PathVariable Long taskId) {
         return ApiResponse.success(generationService.task(taskId));
+    }
+
+    @GetMapping("/tasks")
+    public ApiResponse<DramaTaskCenterVo> tasks(@RequestParam(defaultValue = "80") Integer limit) {
+        return ApiResponse.success(taskCenterService.listTasks(limit == null ? 80 : limit));
     }
 }

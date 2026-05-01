@@ -74,8 +74,18 @@ public class DramaProperties {
     public static class ModelConfig {
         private String provider = "openai-compatible";
         private String baseUrl = "";
+        private String completionsPath = "/chat/completions";
+        private String imagesPath = "/images/generations";
+        private String imageEditsPath = "/images/edits";
         private String apiKey = "";
         private String model = "";
+        private Integer maxTokens = 12000;
+        private String imageSize = "1024x1536";
+        private String imageQuality = "low";
+        private String imageOutputFormat = "jpeg";
+        private Integer imageOutputCompression = 85;
+        private Boolean imageStream = false;
+        private Integer imagePartialImages = 0;
 
         public String getProvider() {
             return provider;
@@ -91,6 +101,30 @@ public class DramaProperties {
 
         public void setBaseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
+        }
+
+        public String getCompletionsPath() {
+            return completionsPath;
+        }
+
+        public void setCompletionsPath(String completionsPath) {
+            this.completionsPath = completionsPath;
+        }
+
+        public String getImagesPath() {
+            return imagesPath;
+        }
+
+        public void setImagesPath(String imagesPath) {
+            this.imagesPath = imagesPath;
+        }
+
+        public String getImageEditsPath() {
+            return imageEditsPath;
+        }
+
+        public void setImageEditsPath(String imageEditsPath) {
+            this.imageEditsPath = imageEditsPath;
         }
 
         public String getApiKey() {
@@ -109,10 +143,66 @@ public class DramaProperties {
             this.model = model;
         }
 
+        public Integer getMaxTokens() {
+            return maxTokens;
+        }
+
+        public void setMaxTokens(Integer maxTokens) {
+            this.maxTokens = maxTokens;
+        }
+
         public boolean isReady() {
             return baseUrl != null && !baseUrl.isBlank()
                     && apiKey != null && !apiKey.isBlank()
                     && model != null && !model.isBlank();
+        }
+
+        public String getImageSize() {
+            return imageSize;
+        }
+
+        public void setImageSize(String imageSize) {
+            this.imageSize = imageSize;
+        }
+
+        public String getImageQuality() {
+            return imageQuality;
+        }
+
+        public void setImageQuality(String imageQuality) {
+            this.imageQuality = imageQuality;
+        }
+
+        public String getImageOutputFormat() {
+            return imageOutputFormat;
+        }
+
+        public void setImageOutputFormat(String imageOutputFormat) {
+            this.imageOutputFormat = imageOutputFormat;
+        }
+
+        public Integer getImageOutputCompression() {
+            return imageOutputCompression;
+        }
+
+        public void setImageOutputCompression(Integer imageOutputCompression) {
+            this.imageOutputCompression = imageOutputCompression;
+        }
+
+        public Boolean getImageStream() {
+            return imageStream;
+        }
+
+        public void setImageStream(Boolean imageStream) {
+            this.imageStream = imageStream;
+        }
+
+        public Integer getImagePartialImages() {
+            return imagePartialImages;
+        }
+
+        public void setImagePartialImages(Integer imagePartialImages) {
+            this.imagePartialImages = imagePartialImages;
         }
     }
 

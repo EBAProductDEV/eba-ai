@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 public record DramaSeriesSummaryVo(
         Long id,
         String name,
+        String aspectRatio,
         String type,
         String intro,
         String style,

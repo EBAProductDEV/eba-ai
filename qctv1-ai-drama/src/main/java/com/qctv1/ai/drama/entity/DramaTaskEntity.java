@@ -23,9 +23,17 @@ public class DramaTaskEntity {
     private Long seriesId;
     private Long episodeId;
     private Long shotId;
+    private Long characterId;
+    private Long assetId;
+    private String targetType;
+    private Long targetId;
+    private String assetType;
+    private String assetSubType;
     private String taskType;
     private String providerTaskId;
     private String status;
+    private Integer progress;
+    private String stage;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

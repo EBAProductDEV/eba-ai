@@ -1,18 +1,32 @@
-server:
-  # 10083 已被 qctv1-iam 占用；短剧服务使用 10084，网关本地路由同步指向该端口。
+﻿server:
+  # 10083 已被 qctv1-iam 占用，短剧服务使用 10084，网关本地路由同步指向该端口。
   port: 10084
   servlet:
     encoding:
       charset: UTF-8
       enabled: true
       force: true
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-exception: true
+    include-stacktrace: always
+  tomcat:
+    accesslog:
+      enabled: true
+      directory: logs
+      prefix: drama-access
+      suffix: .log
+      pattern: '%h %l %u %t "%r" %s %b %D "%{Referer}i" "%{User-Agent}i"'
 
 spring:
   application:
     name: qctv1-ai-drama
   profiles:
-    # 默认 local，避免本地启动短剧服务时强依赖 Nacos。
+    # 当前沿用已有默认 nacos 策略；本地调试如果不走 Nacos，可启动时指定 --spring.profiles.active=local。
     default: nacos
+  mvc:
+    log-request-details: true
   datasource:
     url: jdbc:mysql://${QCTV1_DB_MYSQL_HOST:localhost}:${QCTV1_DB_MYSQL_PORT:3306}/qctv1-dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=utf8
     username: ${QCTV1_DB_MYSQL_USER:root}
@@ -29,26 +43,50 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,loggers
   endpoint:
     health:
       show-details: always
 
+logging:
+  level:
+    root: INFO
+    com.qctv1.ai.drama: DEBUG
+    com.qctv1.ai.drama.mapper: DEBUG
+    com.baomidou.mybatisplus: DEBUG
+    org.mybatis: DEBUG
+    org.apache.ibatis: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.web.servlet.DispatcherServlet: DEBUG
+    org.springframework.jdbc.core: DEBUG
+    org.springframework.transaction: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{80} - %msg%n"
+
 app:
   ai:
     drama:
-      # 固定使用中文素材根目录。代码会在启动时自动创建目录，接口读取时会校验路径必须留在该根目录内。
+      # 固定使用中文素材根目录。接口读取时会校验路径必须留在该根目录内。
       asset-root: "D:/AI视频"
       text:
         provider: openai-compatible
-        base-url: ${DRAMA_TEXT_BASE_URL:}
-        api-key: ${DRAMA_TEXT_API_KEY:}
-        model: ${DRAMA_TEXT_MODEL:}
+        base-url: ${DRAMA_TEXT_BASE_URL:https://zen-ai.top/v1}
+        completions-path: ${DRAMA_TEXT_COMPLETIONS_PATH:/chat/completions}
+        api-key: "sk-FbmIuQzi35Iu1tZfZlBhwxU2FsR1G7nQVRssJdfpzBo9Wh9w"
+        model: "gpt-5.5"
       image:
         provider: openai-compatible
-        base-url: ${DRAMA_IMAGE_BASE_URL:}
-        api-key: ${DRAMA_IMAGE_API_KEY:}
-        model: ${DRAMA_IMAGE_MODEL:}
+        base-url: ${DRAMA_IMAGE_BASE_URL:https://api.bbww.top/v1}
+        images-path: ${DRAMA_IMAGE_IMAGES_PATH:/images/generations}
+        image-edits-path: ${DRAMA_IMAGE_EDITS_PATH:/images/edits}
+        api-key: ${DRAMA_IMAGE_API_KEY:sk-U3AGwOTIPe8mrEb7fKaMDJUlDbgLEfTzDEltJVwU6YcfHbCp}
+        model: ${DRAMA_IMAGE_MODEL:gpt-image-2-c}
+        image-size: ${DRAMA_IMAGE_SIZE:1024x1536}
+        image-quality: ${DRAMA_IMAGE_QUALITY:low}
+        image-output-format: ${DRAMA_IMAGE_OUTPUT_FORMAT:jpeg}
+        image-output-compression: ${DRAMA_IMAGE_OUTPUT_COMPRESSION:85}
+        image-stream: ${DRAMA_IMAGE_STREAM:true}
+        image-partial-images: ${DRAMA_IMAGE_PARTIAL_IMAGES:1}
       video:
         provider: openai-compatible
         base-url: ${DRAMA_VIDEO_BASE_URL:}
@@ -72,3 +110,5 @@ mybatis-plus:
       id-type: auto
   configuration:
     map-underscore-to-camel-case: true
+    # 直接把 SQL、参数、结果打印到控制台，排查接口问题最直观。
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

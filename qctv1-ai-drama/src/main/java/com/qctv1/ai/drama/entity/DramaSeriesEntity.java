@@ -22,6 +22,7 @@ public class DramaSeriesEntity {
 
     private Long userId;
     private String name;
+    private String aspectRatio;
     private String type;
     private String intro;
     private String theme;

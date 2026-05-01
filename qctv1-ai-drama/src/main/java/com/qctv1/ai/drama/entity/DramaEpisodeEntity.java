@@ -24,6 +24,7 @@ public class DramaEpisodeEntity {
     private Integer episodeNo;
     private String title;
     private String summary;
+    private String novelContent;
     private String hook;
     private String cliffhanger;
     private String script;

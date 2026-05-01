@@ -21,11 +21,18 @@ public class DramaAssetEntity {
 
     private Long seriesId;
     private Long episodeId;
+    private Long sceneId;
     private Long shotId;
+    private Long characterId;
     private String assetType;
+    private String assetSubType;
+    private Long referenceAssetId;
     private String fileName;
     private String contentType;
     private String localPath;
     private String accessUrl;
+    private String prompt;
+    private String seed;
+    private String status;
     private LocalDateTime createdAt;
 }

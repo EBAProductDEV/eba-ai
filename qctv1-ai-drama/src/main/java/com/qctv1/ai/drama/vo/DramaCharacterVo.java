@@ -11,6 +11,12 @@ public record DramaCharacterVo(
         String costume,
         String personality,
         String relationship,
+        String visualProfile,
+        Long primaryReferenceAssetId,
+        Long avatarAssetId,
+        String primaryReferenceAccessUrl,
+        String avatarAccessUrl,
+        String imageSeed,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {

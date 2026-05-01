@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 
 public record DramaSeriesCreateRequest(
         @NotBlank(message = "项目名称不能为空") String name,
+        @NotBlank(message = "画面比例不能为空") String aspectRatio,
         @NotBlank(message = "类型不能为空") String type,
         String intro,
         String theme,

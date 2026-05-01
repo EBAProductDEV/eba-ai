@@ -27,6 +27,10 @@ public class DramaCharacterEntity {
     private String costume;
     private String personality;
     private String relationship;
+    private String visualProfile;
+    private Long primaryReferenceAssetId;
+    private Long avatarAssetId;
+    private String imageSeed;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -6,6 +6,7 @@ import java.util.List;
 public record DramaSeriesDetailVo(
         Long id,
         String name,
+        String aspectRatio,
         String type,
         String intro,
         String theme,

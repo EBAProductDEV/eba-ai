@@ -5,6 +5,7 @@ public record DramaEpisodeVo(
         Integer episodeNo,
         String title,
         String summary,
+        String novelContent,
         String hook,
         String cliffhanger,
         String script,

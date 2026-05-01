@@ -24,6 +24,13 @@ public class DramaShotEntity {
     private Long sceneId;
     private Integer shotNo;
     private String shotSize;
+    private Integer durationSeconds;
+    private String cameraMovement;
+    private String composition;
+    private String transitionType;
+    private String soundEffect;
+    private String musicCue;
+    private String voiceOver;
     private String action;
     private String dialogue;
     private String imagePrompt;

@@ -6,6 +6,7 @@ public record DramaSeriesRecord(
         Long id,
         Long userId,
         String name,
+        String aspectRatio,
         String type,
         String intro,
         String theme,

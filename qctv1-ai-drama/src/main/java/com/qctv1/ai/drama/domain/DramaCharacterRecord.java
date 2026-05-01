@@ -11,6 +11,10 @@ public record DramaCharacterRecord(
         String costume,
         String personality,
         String relationship,
+        String visualProfile,
+        Long primaryReferenceAssetId,
+        Long avatarAssetId,
+        String imageSeed,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {

@@ -1,6 +1,7 @@
 package com.qctv1.ai.drama.repository;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.qctv1.ai.drama.domain.DramaCharacterRecord;
 import com.qctv1.ai.drama.entity.DramaCharacterEntity;
@@ -54,7 +55,18 @@ public class DramaCharacterRepository {
     }
 
     public Optional<DramaCharacterRecord> findById(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
         return Optional.ofNullable(characterMapper.selectById(id)).map(this::toRecord);
+    }
+
+    public Optional<DramaCharacterRecord> findBySeriesAndId(Long seriesId, Long characterId) {
+        return Optional.ofNullable(characterMapper.selectOne(new LambdaQueryWrapper<DramaCharacterEntity>()
+                        .eq(DramaCharacterEntity::getSeriesId, seriesId)
+                        .eq(DramaCharacterEntity::getId, characterId)
+                        .last("LIMIT 1")))
+                .map(this::toRecord);
     }
 
     public boolean delete(Long seriesId, Long characterId) {
@@ -62,6 +74,50 @@ public class DramaCharacterRepository {
                 .eq(DramaCharacterEntity::getId, characterId)
                 .eq(DramaCharacterEntity::getSeriesId, seriesId);
         return characterMapper.delete(wrapper) > 0;
+    }
+
+    public boolean update(
+            Long seriesId,
+            Long characterId,
+            String name,
+            String profile,
+            String appearance,
+            String costume,
+            String personality,
+            String relationship
+    ) {
+        LambdaUpdateWrapper<DramaCharacterEntity> wrapper = new LambdaUpdateWrapper<DramaCharacterEntity>()
+                .set(DramaCharacterEntity::getName, name)
+                .set(DramaCharacterEntity::getProfile, profile)
+                .set(DramaCharacterEntity::getAppearance, appearance)
+                .set(DramaCharacterEntity::getCostume, costume)
+                .set(DramaCharacterEntity::getPersonality, personality)
+                .set(DramaCharacterEntity::getRelationship, relationship)
+                .set(DramaCharacterEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaCharacterEntity::getId, characterId)
+                .eq(DramaCharacterEntity::getSeriesId, seriesId);
+        return characterMapper.update(null, wrapper) > 0;
+    }
+
+    public void updateImageReference(Long seriesId, Long characterId, Long avatarAssetId, Long primaryReferenceAssetId, String imageSeed) {
+        LambdaUpdateWrapper<DramaCharacterEntity> wrapper = new LambdaUpdateWrapper<DramaCharacterEntity>()
+                .set(avatarAssetId != null, DramaCharacterEntity::getAvatarAssetId, avatarAssetId)
+                .set(primaryReferenceAssetId != null, DramaCharacterEntity::getPrimaryReferenceAssetId, primaryReferenceAssetId)
+                .set(imageSeed != null && !imageSeed.isBlank(), DramaCharacterEntity::getImageSeed, imageSeed)
+                .set(DramaCharacterEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaCharacterEntity::getId, characterId)
+                .eq(DramaCharacterEntity::getSeriesId, seriesId);
+        characterMapper.update(null, wrapper);
+    }
+
+    public void clearImageReference(Long seriesId, Long characterId, boolean clearAvatar, boolean clearPrimaryReference) {
+        LambdaUpdateWrapper<DramaCharacterEntity> wrapper = new LambdaUpdateWrapper<DramaCharacterEntity>()
+                .set(clearAvatar, DramaCharacterEntity::getAvatarAssetId, null)
+                .set(clearPrimaryReference, DramaCharacterEntity::getPrimaryReferenceAssetId, null)
+                .set(DramaCharacterEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaCharacterEntity::getId, characterId)
+                .eq(DramaCharacterEntity::getSeriesId, seriesId);
+        characterMapper.update(null, wrapper);
     }
 
     private DramaCharacterRecord toRecord(DramaCharacterEntity entity) {
@@ -74,6 +130,10 @@ public class DramaCharacterRepository {
                 entity.getCostume(),
                 entity.getPersonality(),
                 entity.getRelationship(),
+                entity.getVisualProfile(),
+                entity.getPrimaryReferenceAssetId(),
+                entity.getAvatarAssetId(),
+                entity.getImageSeed(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );

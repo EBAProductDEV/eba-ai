@@ -24,6 +24,7 @@ public class DramaSeriesRepository {
     public DramaSeriesRecord create(
             Long userId,
             String name,
+            String aspectRatio,
             String type,
             String intro,
             String theme,
@@ -35,6 +36,7 @@ public class DramaSeriesRepository {
         DramaSeriesEntity entity = new DramaSeriesEntity();
         entity.setUserId(userId);
         entity.setName(name);
+        entity.setAspectRatio(normalizeAspectRatio(aspectRatio));
         entity.setType(type);
         entity.setIntro(intro);
         entity.setTheme(theme);
@@ -75,6 +77,9 @@ public class DramaSeriesRepository {
     }
 
     public Optional<DramaSeriesRecord> findById(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
         DramaSeriesEntity entity = seriesMapper.selectOne(new LambdaQueryWrapper<DramaSeriesEntity>()
                 .eq(DramaSeriesEntity::getId, id)
                 .eq(DramaSeriesEntity::getDeleted, false)
@@ -95,6 +100,14 @@ public class DramaSeriesRepository {
                 .eq(DramaSeriesEntity::getDeleted, false));
     }
 
+    public void updateTotalEpisodes(Long id, Integer totalEpisodes) {
+        seriesMapper.update(new LambdaUpdateWrapper<DramaSeriesEntity>()
+                .set(DramaSeriesEntity::getTotalEpisodes, totalEpisodes)
+                .set(DramaSeriesEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaSeriesEntity::getId, id)
+                .eq(DramaSeriesEntity::getDeleted, false));
+    }
+
     public boolean softDelete(Long id, Long userId) {
         int updated = seriesMapper.update(new LambdaUpdateWrapper<DramaSeriesEntity>()
                 .set(DramaSeriesEntity::getDeleted, true)
@@ -110,6 +123,7 @@ public class DramaSeriesRepository {
                 entity.getId(),
                 entity.getUserId(),
                 entity.getName(),
+                normalizeAspectRatio(entity.getAspectRatio()),
                 entity.getType(),
                 entity.getIntro(),
                 entity.getTheme(),
@@ -125,5 +139,12 @@ public class DramaSeriesRepository {
                 entity.getUpdatedAt(),
                 entity.getDeleted()
         );
+    }
+
+    private String normalizeAspectRatio(String aspectRatio) {
+        if ("LANDSCAPE_16_9".equalsIgnoreCase(aspectRatio) || "16:9".equals(aspectRatio) || "横屏".equals(aspectRatio)) {
+            return "LANDSCAPE_16_9";
+        }
+        return "PORTRAIT_9_16";
     }
 }
