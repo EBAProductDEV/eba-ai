@@ -8,6 +8,7 @@ import com.qctv1.ai.drama.repository.DramaAssetRepository;
 import com.qctv1.ai.drama.repository.DramaCharacterRepository;
 import com.qctv1.ai.drama.repository.DramaSeriesRepository;
 import com.qctv1.ai.drama.repository.DramaWorkflowRepository;
+import com.qctv1.ai.drama.support.BusinessException;
 import com.qctv1.ai.drama.vo.DramaTaskCenterItemVo;
 import com.qctv1.ai.drama.vo.DramaTaskCenterVo;
 import org.springframework.stereotype.Service;
@@ -51,6 +52,20 @@ public class DramaTaskCenterService {
                 .map(this::toCenterItem)
                 .toList();
         return new DramaTaskCenterVo(workflowRepository.countActiveTasks(), tasks.size(), tasks);
+    }
+
+    public DramaTaskCenterVo cancelTask(Long taskId) {
+        DramaTaskRecord task = workflowRepository.findTask(taskId).stream()
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(404, "异步任务不存在"));
+        if (!"PENDING".equals(task.status()) && !"RUNNING".equals(task.status())) {
+            throw new BusinessException(400, "只能终止排队中或执行中的异步任务");
+        }
+        boolean cancelled = workflowRepository.cancelActiveTask(taskId, "用户已终止该任务");
+        if (!cancelled) {
+            throw new BusinessException(409, "任务状态已变化，请刷新任务中心后重试");
+        }
+        return listTasks(80);
     }
 
     private DramaTaskCenterItemVo toCenterItem(DramaTaskRecord task) {

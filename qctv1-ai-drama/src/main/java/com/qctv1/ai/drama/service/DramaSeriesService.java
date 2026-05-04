@@ -351,6 +351,7 @@ public class DramaSeriesService {
         return new DramaShotVo(
                 record.id(), record.episodeId(), record.sceneId(), record.shotNo(), record.shotSize(),
                 record.durationSeconds(), record.cameraMovement(), record.composition(), record.transitionType(),
+                record.continuityType(), record.startState(), record.endState(), record.continuityNote(),
                 record.soundEffect(), record.musicCue(), record.voiceOver(), record.action(),
                 record.dialogue(), record.imagePrompt(), record.videoPrompt(), record.status()
         );
@@ -359,7 +360,7 @@ public class DramaSeriesService {
     private DramaAssetVo toAssetVo(DramaAssetRecord record) {
         return new DramaAssetVo(
                 record.id(), record.episodeId(), record.sceneId(), record.shotId(), record.assetType(), record.assetSubType(), record.characterId(),
-                record.fileName(), record.contentType(), record.accessUrl(), record.status(), record.createdAt()
+                record.fileName(), record.contentType(), record.accessUrl(), record.prompt(), record.status(), record.createdAt()
         );
     }
 

@@ -155,6 +155,22 @@ public class DramaAssetRepository {
         return assetMapper.deleteById(assetId) > 0;
     }
 
+    public List<DramaAssetRecord> listShotAssets() {
+        return assetMapper.selectList(new LambdaQueryWrapper<DramaAssetEntity>()
+                        .in(DramaAssetEntity::getAssetType, List.of("SHOT_IMAGE", "SHOT_VIDEO"))
+                        .orderByAsc(DramaAssetEntity::getId))
+                .stream()
+                .map(this::toRecord)
+                .toList();
+    }
+
+    public void updateLocalPath(Long assetId, String fileName, String localPath) {
+        assetMapper.update(null, new LambdaUpdateWrapper<DramaAssetEntity>()
+                .set(DramaAssetEntity::getFileName, fileName)
+                .set(DramaAssetEntity::getLocalPath, localPath)
+                .eq(DramaAssetEntity::getId, assetId));
+    }
+
     public int deleteEpisodeAssetsBySeries(Long seriesId) {
         if (seriesId == null) {
             return 0;

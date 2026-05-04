@@ -14,6 +14,16 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -177,8 +187,89 @@ public class OpenAiCompatibleProviderClients implements TextGenerationClient, Im
     }
 
     @Override
-    public String submitVideoTask(String prompt) {
-        return "mock-video-" + UUID.randomUUID();
+    public VideoTask submitVideoTask(VideoRequest request) {
+        if (!properties.getVideo().isReady()) {
+            throw new IllegalStateException("视频模型未配置，无法生成真实视频");
+        }
+        try {
+            MultipartBodyBuilder builder = new MultipartBodyBuilder();
+            builder.part("model", properties.getVideo().getModel());
+            builder.part("prompt", request.prompt());
+            builder.part("input_reference", buildVideoReferenceDataUri(request.referenceImage(), request.ratio()));
+            builder.part("duration", String.valueOf(resolveVideoSeconds(request.seconds())));
+            builder.part("width", String.valueOf(resolveVideoWidth(request.ratio())));
+            builder.part("height", String.valueOf(resolveVideoHeight(request.ratio())));
+            builder.part("fps", "24");
+            builder.part("n", "1");
+            builder.part("response_format", "url");
+            Map<?, ?> response = webClient.post()
+                    .uri(resolveVideosUrl(properties.getVideo().getBaseUrl(), properties.getVideo().getVideosPath()))
+                    .header("Authorization", "Bearer " + properties.getVideo().getApiKey())
+                    .header("Accept", "application/json,*/*")
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(BodyInserters.fromMultipartData(builder.build()))
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .block(Duration.ofSeconds(180));
+            String providerTaskId = extractVideoTaskId(response);
+            if (providerTaskId == null || providerTaskId.isBlank()) {
+                throw new IllegalStateException("视频模型没有返回任务ID：" + abbreviate(response == null ? "" : response.toString()));
+            }
+            return new VideoTask(providerTaskId);
+        } catch (WebClientResponseException ex) {
+            throw new IllegalStateException("视频生成任务提交失败：" + ex.getStatusCode() + " " + abbreviate(ex.getResponseBodyAsString()), ex);
+        } catch (IOException ex) {
+            throw new IllegalStateException("视频首帧图处理失败：" + ex.getMessage(), ex);
+        }
+    }
+
+    @Override
+    public VideoTaskStatus queryVideoTask(String providerTaskId) {
+        if (!properties.getVideo().isReady()) {
+            throw new IllegalStateException("视频模型未配置，无法查询视频任务");
+        }
+        try {
+            Map<?, ?> response = webClient.get()
+                    .uri(resolveVideosUrl(properties.getVideo().getBaseUrl(), properties.getVideo().getVideosPath()) + "/" + providerTaskId)
+                    .header("Authorization", "Bearer " + properties.getVideo().getApiKey())
+                    .header("Accept", "application/json,*/*")
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .block(Duration.ofSeconds(60));
+            return extractVideoTaskStatus(providerTaskId, response);
+        } catch (WebClientResponseException ex) {
+            String body = ex.getResponseBodyAsString();
+            // NewAPI 某些渠道在任务未完全可查时会返回 model 为空的 403；这里交给上层继续轮询。
+            throw new IllegalStateException("视频任务查询失败：" + ex.getStatusCode() + " " + abbreviate(body), ex);
+        }
+    }
+
+    @Override
+    public VideoFile downloadVideo(String videoUrl) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(videoUrl))
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .timeout(Duration.ofSeconds(300))
+                    .header("Accept", "video/mp4,video/*,*/*")
+                    .header("User-Agent", "python-requests/2.31.0")
+                    .GET()
+                    .build();
+            HttpResponse<byte[]> response = imageHttpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            byte[] bytes = response.body() == null ? new byte[0] : response.body();
+            String contentType = response.headers().firstValue("content-type").orElse("application/octet-stream");
+            if (response.statusCode() >= 400) {
+                throw new IllegalStateException("视频文件下载失败：" + response.statusCode() + " " + abbreviate(toUtf8(bytes)));
+            }
+            if (bytes.length < 1024) {
+                throw new IllegalStateException("视频文件下载结果过小，疑似无效响应：" + abbreviate(toUtf8(bytes)));
+            }
+            return new VideoFile(bytes, contentType == null || contentType.isBlank() ? "video/mp4" : contentType, ".mp4");
+        } catch (IOException ex) {
+            throw new IllegalStateException("视频文件下载失败：" + ex.getMessage(), ex);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("视频文件下载被中断", ex);
+        }
     }
 
     @Override
@@ -221,6 +312,163 @@ public class OpenAiCompatibleProviderClients implements TextGenerationClient, Im
             return normalized;
         }
         return normalized + path;
+    }
+
+    private String resolveVideosUrl(String baseUrl, String videosPath) {
+        String normalized = baseUrl == null ? "" : baseUrl.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        String path = videosPath == null || videosPath.isBlank() ? "/videos" : videosPath.trim();
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        if (normalized.endsWith(path)) {
+            return normalized;
+        }
+        return normalized + path;
+    }
+
+    private String buildVideoReferenceDataUri(Path referenceImage, String ratio) throws IOException {
+        if (referenceImage == null || !Files.exists(referenceImage) || !Files.isRegularFile(referenceImage)) {
+            throw new IOException("视频首帧图不存在：" + referenceImage);
+        }
+        BufferedImage source = ImageIO.read(referenceImage.toFile());
+        if (source == null) {
+            throw new IOException("视频首帧图不是可识别图片：" + referenceImage);
+        }
+        int canvasWidth = resolveVideoWidth(ratio);
+        int canvasHeight = resolveVideoHeight(ratio);
+        BufferedImage canvas = new BufferedImage(canvasWidth, canvasHeight, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = canvas.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            graphics.setColor(new Color(10, 10, 10));
+            graphics.fillRect(0, 0, canvasWidth, canvasHeight);
+            double scale = Math.min((double) canvasWidth / source.getWidth(), (double) canvasHeight / source.getHeight());
+            int width = Math.max(1, (int) Math.round(source.getWidth() * scale));
+            int height = Math.max(1, (int) Math.round(source.getHeight() * scale));
+            int x = (canvasWidth - width) / 2;
+            int y = (canvasHeight - height) / 2;
+            graphics.drawImage(source, x, y, width, height, null);
+        } finally {
+            graphics.dispose();
+        }
+        byte[] jpeg = encodeJpeg(canvas, 0.72f);
+        return "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(jpeg);
+    }
+
+    private byte[] encodeJpeg(BufferedImage image, float quality) throws IOException {
+        ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream();
+             ImageOutputStream imageOutput = ImageIO.createImageOutputStream(output)) {
+            writer.setOutput(imageOutput);
+            ImageWriteParam param = writer.getDefaultWriteParam();
+            if (param.canWriteCompressed()) {
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(Math.max(0.1f, Math.min(quality, 1.0f)));
+            }
+            writer.write(null, new IIOImage(image, null, null), param);
+            return output.toByteArray();
+        } finally {
+            writer.dispose();
+        }
+    }
+
+    private String extractVideoTaskId(Map<?, ?> response) {
+        if (response == null) {
+            return null;
+        }
+        Object taskId = response.get("task_id");
+        if (taskId == null) {
+            taskId = response.get("id");
+        }
+        if (taskId == null && response.get("data") instanceof Map<?, ?> data) {
+            taskId = data.get("task_id") == null ? data.get("id") : data.get("task_id");
+        }
+        return taskId == null ? null : taskId.toString();
+    }
+
+    private VideoTaskStatus extractVideoTaskStatus(String providerTaskId, Map<?, ?> response) {
+        if (response == null) {
+            return new VideoTaskStatus(providerTaskId, "unknown", 0, null, "视频任务查询返回为空");
+        }
+        Object statusValue = response.get("status");
+        Object progressValue = response.get("progress");
+        Object errorValue = response.get("error");
+        String videoUrl = extractVideoUrl(response);
+        if (statusValue == null && response.get("data") instanceof Map<?, ?> data) {
+            statusValue = data.get("status");
+            progressValue = data.get("progress");
+            errorValue = data.get("error");
+            videoUrl = videoUrl == null ? extractVideoUrl(data) : videoUrl;
+        }
+        Integer progress = null;
+        if (progressValue instanceof Number number) {
+            progress = number.intValue();
+        } else if (progressValue != null) {
+            try {
+                progress = Integer.parseInt(progressValue.toString());
+            } catch (NumberFormatException ignored) {
+                progress = null;
+            }
+        }
+        return new VideoTaskStatus(
+                providerTaskId,
+                statusValue == null ? "" : statusValue.toString(),
+                progress,
+                videoUrl,
+                errorValue == null ? null : errorValue.toString()
+        );
+    }
+
+    private String extractVideoUrl(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Object content = map.get("content");
+            if (content instanceof Map<?, ?> contentMap) {
+                Object videoUrl = contentMap.get("video_url");
+                if (videoUrl != null && videoUrl.toString().startsWith("http")) {
+                    return videoUrl.toString();
+                }
+            }
+            for (String key : List.of("video_url", "url", "download_url", "content_url")) {
+                Object url = map.get(key);
+                if (url != null && url.toString().startsWith("http")) {
+                    return url.toString();
+                }
+            }
+            for (Object item : map.values()) {
+                String nested = extractVideoUrl(item);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                String nested = extractVideoUrl(item);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    private int resolveVideoSeconds(Integer seconds) {
+        if (seconds == null || seconds <= 0) {
+            return 5;
+        }
+        return Math.max(4, Math.min(seconds, 12));
+    }
+
+    private int resolveVideoWidth(String ratio) {
+        return "9:16".equals(ratio) ? 720 : 1280;
+    }
+
+    private int resolveVideoHeight(String ratio) {
+        return "9:16".equals(ratio) ? 1280 : 720;
     }
 
     private ImageResult extractImageResult(Map<?, ?> response) {

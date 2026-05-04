@@ -13,6 +13,7 @@ public record DramaAssetVo(
         String fileName,
         String contentType,
         String accessUrl,
+        String prompt,
         String status,
         LocalDateTime createdAt
 ) {

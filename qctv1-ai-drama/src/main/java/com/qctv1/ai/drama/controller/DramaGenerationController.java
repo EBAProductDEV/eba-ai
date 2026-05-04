@@ -3,6 +3,7 @@ package com.qctv1.ai.drama.controller;
 import com.qctv1.ai.drama.dto.DramaStoryAssistantChatRequest;
 import com.qctv1.ai.drama.dto.DramaEpisodeScriptSaveRequest;
 import com.qctv1.ai.drama.dto.DramaEpisodeStepCompleteRequest;
+import com.qctv1.ai.drama.dto.DramaEpisodeStepRollbackRequest;
 import com.qctv1.ai.drama.dto.DramaStoryGenerateRequest;
 import com.qctv1.ai.drama.dto.DramaStoryBriefRequest;
 import com.qctv1.ai.drama.dto.GenerateRequest;
@@ -17,6 +18,7 @@ import com.qctv1.ai.drama.vo.DramaStoryBriefVo;
 import com.qctv1.ai.drama.vo.DramaTaskCenterVo;
 import com.qctv1.ai.drama.vo.DramaTaskVo;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -136,6 +138,11 @@ public class DramaGenerationController {
         return ApiResponse.success(generationService.completeEpisodeStep(episodeId, request));
     }
 
+    @PutMapping("/episodes/{episodeId}/workflow/rollback")
+    public ApiResponse<DramaEpisodeDetailVo> rollbackEpisodeStep(@PathVariable Long episodeId, @RequestBody(required = false) DramaEpisodeStepRollbackRequest request) {
+        return ApiResponse.success(generationService.rollbackEpisodeStep(episodeId, request));
+    }
+
     @PostMapping("/episodes/{episodeId}/shots/generate")
     public ApiResponse<DramaTaskVo> generateShots(@PathVariable Long episodeId, @RequestBody(required = false) GenerateRequest request) {
         return ApiResponse.success(generationService.generateShots(episodeId, request == null ? new GenerateRequest(null, null) : request));
@@ -154,6 +161,11 @@ public class DramaGenerationController {
     @PostMapping("/episodes/{episodeId}/shot-images/generate")
     public ApiResponse<List<DramaTaskVo>> generateEpisodeShotImages(@PathVariable Long episodeId) {
         return ApiResponse.success(generationService.generateEpisodeShotImages(episodeId));
+    }
+
+    @PostMapping("/episodes/{episodeId}/shot-videos/generate")
+    public ApiResponse<List<DramaTaskVo>> generateEpisodeShotVideos(@PathVariable Long episodeId) {
+        return ApiResponse.success(generationService.generateEpisodeShotVideos(episodeId));
     }
 
     @PostMapping("/characters/{characterId}/image/generate")
@@ -184,5 +196,10 @@ public class DramaGenerationController {
     @GetMapping("/tasks")
     public ApiResponse<DramaTaskCenterVo> tasks(@RequestParam(defaultValue = "80") Integer limit) {
         return ApiResponse.success(taskCenterService.listTasks(limit == null ? 80 : limit));
+    }
+
+    @DeleteMapping("/tasks/{taskId:\\d+}")
+    public ApiResponse<DramaTaskCenterVo> cancelTask(@PathVariable Long taskId) {
+        return ApiResponse.success(taskCenterService.cancelTask(taskId));
     }
 }

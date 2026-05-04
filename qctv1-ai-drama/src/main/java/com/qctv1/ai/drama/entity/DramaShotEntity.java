@@ -28,6 +28,10 @@ public class DramaShotEntity {
     private String cameraMovement;
     private String composition;
     private String transitionType;
+    private String continuityType;
+    private String startState;
+    private String endState;
+    private String continuityNote;
     private String soundEffect;
     private String musicCue;
     private String voiceOver;

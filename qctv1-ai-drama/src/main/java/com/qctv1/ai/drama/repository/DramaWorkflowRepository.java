@@ -23,6 +23,8 @@ import java.util.Optional;
 @Repository
 public class DramaWorkflowRepository {
 
+    private static final List<String> ACTIVE_TASK_STATUSES = List.of("PENDING", "RUNNING");
+
     private final DramaEpisodeMapper episodeMapper;
     private final DramaSceneMapper sceneMapper;
     private final DramaShotMapper shotMapper;
@@ -117,6 +119,16 @@ public class DramaWorkflowRepository {
                 .eq(DramaEpisodeEntity::getId, episodeId));
     }
 
+    public void rollbackEpisodeContent(Long episodeId, boolean clearNovel, boolean clearScript, String status) {
+        LambdaUpdateWrapper<DramaEpisodeEntity> wrapper = new LambdaUpdateWrapper<DramaEpisodeEntity>()
+                .set(clearNovel, DramaEpisodeEntity::getNovelContent, "")
+                .set(clearScript, DramaEpisodeEntity::getScript, "")
+                .set(DramaEpisodeEntity::getStatus, status)
+                .set(DramaEpisodeEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaEpisodeEntity::getId, episodeId);
+        episodeMapper.update(null, wrapper);
+    }
+
     public void updateEpisodeStatus(Long episodeId, String status) {
         episodeMapper.update(null, new LambdaUpdateWrapper<DramaEpisodeEntity>()
                 .set(DramaEpisodeEntity::getStatus, status)
@@ -191,6 +203,10 @@ public class DramaWorkflowRepository {
             String cameraMovement,
             String composition,
             String transitionType,
+            String continuityType,
+            String startState,
+            String endState,
+            String continuityNote,
             String soundEffect,
             String musicCue,
             String voiceOver,
@@ -214,6 +230,10 @@ public class DramaWorkflowRepository {
             entity.setCameraMovement(cameraMovement);
             entity.setComposition(composition);
             entity.setTransitionType(transitionType);
+            entity.setContinuityType(continuityType);
+            entity.setStartState(startState);
+            entity.setEndState(endState);
+            entity.setContinuityNote(continuityNote);
             entity.setSoundEffect(soundEffect);
             entity.setMusicCue(musicCue);
             entity.setVoiceOver(voiceOver);
@@ -234,6 +254,10 @@ public class DramaWorkflowRepository {
                 .set(DramaShotEntity::getCameraMovement, cameraMovement)
                 .set(DramaShotEntity::getComposition, composition)
                 .set(DramaShotEntity::getTransitionType, transitionType)
+                .set(DramaShotEntity::getContinuityType, continuityType)
+                .set(DramaShotEntity::getStartState, startState)
+                .set(DramaShotEntity::getEndState, endState)
+                .set(DramaShotEntity::getContinuityNote, continuityNote)
                 .set(DramaShotEntity::getSoundEffect, soundEffect)
                 .set(DramaShotEntity::getMusicCue, musicCue)
                 .set(DramaShotEntity::getVoiceOver, voiceOver)
@@ -251,6 +275,13 @@ public class DramaWorkflowRepository {
                 .set(DramaShotEntity::getDialogue, dialogue)
                 .set(DramaShotEntity::getUpdatedAt, LocalDateTime.now())
                 .eq(DramaShotEntity::getId, shotId));
+    }
+
+    public void clearShotDialoguesByEpisode(Long episodeId) {
+        shotMapper.update(null, new LambdaUpdateWrapper<DramaShotEntity>()
+                .set(DramaShotEntity::getDialogue, "")
+                .set(DramaShotEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaShotEntity::getEpisodeId, episodeId));
     }
 
     public Long createTask(Long seriesId, Long episodeId, Long shotId, String taskType, String status, String errorMessage) {
@@ -340,7 +371,16 @@ public class DramaWorkflowRepository {
                 .set(DramaTaskEntity::getStage, stage)
                 .set(DramaTaskEntity::getErrorMessage, errorMessage)
                 .set(DramaTaskEntity::getUpdatedAt, LocalDateTime.now())
-                .eq(DramaTaskEntity::getId, taskId));
+                .eq(DramaTaskEntity::getId, taskId)
+                .in(DramaTaskEntity::getStatus, ACTIVE_TASK_STATUSES));
+    }
+
+    public void updateTaskProviderTaskId(Long taskId, String providerTaskId) {
+        taskMapper.update(null, new LambdaUpdateWrapper<DramaTaskEntity>()
+                .set(DramaTaskEntity::getProviderTaskId, providerTaskId)
+                .set(DramaTaskEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaTaskEntity::getId, taskId)
+                .in(DramaTaskEntity::getStatus, ACTIVE_TASK_STATUSES));
     }
 
     public void completeTask(Long taskId, Long assetId, String providerTaskId, String message) {
@@ -352,7 +392,8 @@ public class DramaWorkflowRepository {
                 .set(DramaTaskEntity::getStage, "DONE")
                 .set(DramaTaskEntity::getErrorMessage, message)
                 .set(DramaTaskEntity::getUpdatedAt, LocalDateTime.now())
-                .eq(DramaTaskEntity::getId, taskId));
+                .eq(DramaTaskEntity::getId, taskId)
+                .in(DramaTaskEntity::getStatus, ACTIVE_TASK_STATUSES));
     }
 
     public void failTask(Long taskId, String errorMessage) {
@@ -362,7 +403,30 @@ public class DramaWorkflowRepository {
                 .set(DramaTaskEntity::getStage, "FAILED")
                 .set(DramaTaskEntity::getErrorMessage, errorMessage)
                 .set(DramaTaskEntity::getUpdatedAt, LocalDateTime.now())
-                .eq(DramaTaskEntity::getId, taskId));
+                .eq(DramaTaskEntity::getId, taskId)
+                .in(DramaTaskEntity::getStatus, ACTIVE_TASK_STATUSES));
+    }
+
+    public boolean cancelActiveTask(Long taskId, String errorMessage) {
+        return taskMapper.update(null, new LambdaUpdateWrapper<DramaTaskEntity>()
+                .set(DramaTaskEntity::getStatus, "FAILED")
+                .set(DramaTaskEntity::getProgress, 100)
+                .set(DramaTaskEntity::getStage, "FAILED")
+                .set(DramaTaskEntity::getErrorMessage, errorMessage)
+                .set(DramaTaskEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaTaskEntity::getId, taskId)
+                .in(DramaTaskEntity::getStatus, ACTIVE_TASK_STATUSES)) > 0;
+    }
+
+    public void failActiveTasksByEpisode(Long episodeId, String errorMessage) {
+        taskMapper.update(null, new LambdaUpdateWrapper<DramaTaskEntity>()
+                .set(DramaTaskEntity::getStatus, "FAILED")
+                .set(DramaTaskEntity::getProgress, 100)
+                .set(DramaTaskEntity::getStage, "FAILED")
+                .set(DramaTaskEntity::getErrorMessage, errorMessage)
+                .set(DramaTaskEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaTaskEntity::getEpisodeId, episodeId)
+                .in(DramaTaskEntity::getStatus, List.of("PENDING", "RUNNING")));
     }
 
     public List<DramaTaskRecord> listRecentTasks(Long seriesId, int limit) {
@@ -411,7 +475,7 @@ public class DramaWorkflowRepository {
                 .eq(DramaTaskEntity::getTaskType, taskType)
                 // 图片/视频素材删除后，历史 SUCCEEDED 任务不能继续阻止重新生成。
                 // 这里真正需要拦截的只有仍在排队或执行中的任务，避免重复提交并发任务。
-                .in(DramaTaskEntity::getStatus, List.of("PENDING", "RUNNING"))) > 0;
+                .in(DramaTaskEntity::getStatus, ACTIVE_TASK_STATUSES)) > 0;
     }
 
     public boolean existsNonFailedTaskByTargetAndTaskType(String targetType, Long targetId, String taskType) {
@@ -424,7 +488,7 @@ public class DramaWorkflowRepository {
                 .eq(DramaTaskEntity::getTaskType, taskType)
                 // 素材是否存在由 ai_drama_asset 判断；任务表只判断是否有正在执行的同类任务。
                 // 否则删除图片后，旧的 SUCCEEDED 任务会导致前端看起来“点击生成没反应”。
-                .in(DramaTaskEntity::getStatus, List.of("PENDING", "RUNNING"))) > 0;
+                .in(DramaTaskEntity::getStatus, ACTIVE_TASK_STATUSES)) > 0;
     }
 
     public List<DramaTaskRecord> findTask(Long taskId) {
@@ -499,6 +563,10 @@ public class DramaWorkflowRepository {
                 entity.getCameraMovement(),
                 entity.getComposition(),
                 entity.getTransitionType(),
+                entity.getContinuityType(),
+                entity.getStartState(),
+                entity.getEndState(),
+                entity.getContinuityNote(),
                 entity.getSoundEffect(),
                 entity.getMusicCue(),
                 entity.getVoiceOver(),

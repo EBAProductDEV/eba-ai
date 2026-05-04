@@ -76,7 +76,8 @@ app:
         model: "gpt-5.5"
       image:
         provider: openai-compatible
-        base-url: ${DRAMA_IMAGE_BASE_URL:https://api.bbww.top/v1}
+#       https://api-direct.bbww.top、https://api.bbww.top/v1
+        base-url: ${DRAMA_IMAGE_BASE_URL:https://api-direct.bbww.top/v1}
         images-path: ${DRAMA_IMAGE_IMAGES_PATH:/images/generations}
         image-edits-path: ${DRAMA_IMAGE_EDITS_PATH:/images/edits}
         api-key: ${DRAMA_IMAGE_API_KEY:sk-U3AGwOTIPe8mrEb7fKaMDJUlDbgLEfTzDEltJVwU6YcfHbCp}
@@ -89,9 +90,10 @@ app:
         image-partial-images: ${DRAMA_IMAGE_PARTIAL_IMAGES:1}
       video:
         provider: openai-compatible
-        base-url: ${DRAMA_VIDEO_BASE_URL:}
-        api-key: ${DRAMA_VIDEO_API_KEY:}
-        model: ${DRAMA_VIDEO_MODEL:}
+        base-url: ${DRAMA_VIDEO_BASE_URL:https://api.bbww.top/v1}
+        videos-path: ${DRAMA_VIDEO_VIDEOS_PATH:/videos}
+        api-key: ${DRAMA_VIDEO_API_KEY:sk-NKm964SAyVR5UVrNBrI80G8aM6UvC55cXqVUp5RmORdU3zvG}
+        model: ${DRAMA_VIDEO_MODEL:doubao-seedance-1-5-pro-251215}
       embedding:
         provider: openai-compatible
         base-url: ${DRAMA_EMBEDDING_BASE_URL:}

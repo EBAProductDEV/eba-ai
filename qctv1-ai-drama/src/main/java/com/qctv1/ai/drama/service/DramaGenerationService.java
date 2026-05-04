@@ -1,6 +1,7 @@
 package com.qctv1.ai.drama.service;
 
 import com.qctv1.ai.drama.config.DramaProperties;
+import com.qctv1.ai.drama.domain.DramaAssetRecord;
 import com.qctv1.ai.drama.domain.DramaCharacterRecord;
 import com.qctv1.ai.drama.domain.DramaEpisodeRecord;
 import com.qctv1.ai.drama.domain.DramaImageGenerationContext;
@@ -9,13 +10,13 @@ import com.qctv1.ai.drama.domain.DramaSeriesRecord;
 import com.qctv1.ai.drama.domain.DramaShotRecord;
 import com.qctv1.ai.drama.dto.DramaEpisodeScriptSaveRequest;
 import com.qctv1.ai.drama.dto.DramaEpisodeStepCompleteRequest;
+import com.qctv1.ai.drama.dto.DramaEpisodeStepRollbackRequest;
 import com.qctv1.ai.drama.dto.DramaStoryAssistantChatRequest;
 import com.qctv1.ai.drama.dto.DramaStoryBriefRequest;
 import com.qctv1.ai.drama.dto.DramaStoryGenerateRequest;
 import com.qctv1.ai.drama.dto.GenerateRequest;
 import com.qctv1.ai.drama.provider.ImageGenerationClient;
 import com.qctv1.ai.drama.provider.TextGenerationClient;
-import com.qctv1.ai.drama.provider.VideoGenerationClient;
 import com.qctv1.ai.drama.repository.DramaAssetRepository;
 import com.qctv1.ai.drama.repository.DramaCharacterRepository;
 import com.qctv1.ai.drama.repository.DramaSeriesRepository;
@@ -46,12 +47,12 @@ public class DramaGenerationService {
     private final DramaCharacterRepository characterRepository;
     private final TextGenerationClient textGenerationClient;
     private final ImageGenerationClient imageGenerationClient;
-    private final VideoGenerationClient videoGenerationClient;
     private final DramaProperties properties;
     private final DramaSeriesService seriesService;
     private final DramaEpisodeBreakdownMemoryService episodeBreakdownMemoryService;
     private final DramaAssetService assetService;
     private final DramaImageGenerationService imageGenerationService;
+    private final DramaVideoGenerationService videoGenerationService;
 
     public DramaGenerationService(
             DramaSeriesRepository seriesRepository,
@@ -60,12 +61,12 @@ public class DramaGenerationService {
             DramaCharacterRepository characterRepository,
             TextGenerationClient textGenerationClient,
             ImageGenerationClient imageGenerationClient,
-            VideoGenerationClient videoGenerationClient,
             DramaProperties properties,
             DramaSeriesService seriesService,
             DramaEpisodeBreakdownMemoryService episodeBreakdownMemoryService,
             DramaAssetService assetService,
-            DramaImageGenerationService imageGenerationService
+            DramaImageGenerationService imageGenerationService,
+            DramaVideoGenerationService videoGenerationService
     ) {
         this.seriesRepository = seriesRepository;
         this.workflowRepository = workflowRepository;
@@ -73,12 +74,12 @@ public class DramaGenerationService {
         this.characterRepository = characterRepository;
         this.textGenerationClient = textGenerationClient;
         this.imageGenerationClient = imageGenerationClient;
-        this.videoGenerationClient = videoGenerationClient;
         this.properties = properties;
         this.seriesService = seriesService;
         this.episodeBreakdownMemoryService = episodeBreakdownMemoryService;
         this.assetService = assetService;
         this.imageGenerationService = imageGenerationService;
+        this.videoGenerationService = videoGenerationService;
     }
 
     public DramaStoryBriefVo prepareStoryBrief(Long seriesId, DramaStoryBriefRequest request) {
@@ -116,12 +117,12 @@ public class DramaGenerationService {
         String storySummary = request == null || !hasText(request.storySummary()) ? nullToDefault(series.storySummary(), "") : request.storySummary();
 
         if (question.isBlank()) {
-            return new DramaStoryAssistantChatVo("请先输入你想让 AI 修改的故事要求。", false, properties.getText().isReady(), currentStory, "reject");
+            return new DramaStoryAssistantChatVo("请先输入你想让 AI 修改或分析的故事要求。", false, properties.getText().isReady(), currentStory, "reject");
         }
         boolean storyEditCommand = isStoryEditCommand(question);
         boolean storyReadOnlyQuestion = isStoryReadOnlyQuestion(question);
         if (isClearlyOutOfStoryScope(question)) {
-            return new DramaStoryAssistantChatVo("我只能处理短剧故事、小说原文、剧情结构、角色塑造、冲突设计、爽点反转和文风润色相关修改。其它问题不处理。", false, properties.getText().isReady(), currentStory, "reject");
+            return new DramaStoryAssistantChatVo("我只能处理短剧故事、小说原文、剧情结构、角色塑造、冲突设计、爽点反转和文风润色相关内容，其它问题不处理。", false, properties.getText().isReady(), currentStory, "reject");
         }
         if (!hasText(currentStory)) {
             return new DramaStoryAssistantChatVo("故事原文为空，请先填写故事原文后再让 AI 修改。", false, properties.getText().isReady(), currentStory, "reject");
@@ -143,7 +144,7 @@ public class DramaGenerationService {
         if (storyReadOnlyQuestion && !storyEditCommand) {
             String modelAnswer = textGenerationClient.generate(buildStoryAnswerPrompt(series, storySummary, currentStory, question, request == null ? List.of() : request.history()));
             if (isModelFallback(modelAnswer)) {
-                return new DramaStoryAssistantChatVo("当前模型未就绪或调用失败，暂时无法总结/分析故事原文。", false, properties.getText().isReady(), null, "reject");
+                return new DramaStoryAssistantChatVo("当前模型未就绪或调用失败，暂时无法总结或分析故事原文。", false, properties.getText().isReady(), null, "reject");
             }
             return new DramaStoryAssistantChatVo(modelAnswer.trim(), true, properties.getText().isReady(), null, "answer");
         }
@@ -281,6 +282,9 @@ public class DramaGenerationService {
         if (!properties.getText().isReady()) {
             throw new BusinessException(400, "单集剧本生成失败：文本模型未配置");
         }
+        if (!hasText(episode.novelContent())) {
+            throw new BusinessException(400, "请先生成或填写本集小说正文，再生成单集剧本");
+        }
         DramaSeriesRecord series = findSeries(episode.seriesId());
         List<DramaEpisodeRecord> episodes = workflowRepository.listEpisodes(series.id());
         List<DramaCharacterRecord> characters = characterRepository.listBySeries(series.id());
@@ -317,7 +321,7 @@ public class DramaGenerationService {
                 .orElseThrow(() -> new BusinessException(404, "分集不存在"));
         String step = request == null ? "" : nullToEmpty(request.step()).trim().toUpperCase();
         if (!hasText(step)) {
-            throw new BusinessException(400, "请选择要完成的制作步骤");
+            throw new BusinessException(400, "璇烽€夋嫨瑕佸畬鎴愮殑鍒朵綔姝ラ");
         }
         String nextStatus = switch (step) {
             case "NOVEL" -> {
@@ -385,6 +389,51 @@ public class DramaGenerationService {
         };
         workflowRepository.updateEpisodeStatus(episodeId, nextStatus);
         workflowRepository.createTask(episode.seriesId(), episodeId, null, "EPISODE_STEP_COMPLETE", "SUCCEEDED", "已完成制作步骤：" + step);
+        return seriesService.episodeDetail(episodeId);
+    }
+
+    @Transactional
+    public DramaEpisodeDetailVo rollbackEpisodeStep(Long episodeId, DramaEpisodeStepRollbackRequest request) {
+        DramaEpisodeRecord episode = workflowRepository.findEpisode(episodeId)
+                .orElseThrow(() -> new BusinessException(404, "分集不存在"));
+        String step = request == null ? "" : nullToEmpty(request.step()).trim().toUpperCase(Locale.ROOT);
+        if (!hasText(step)) {
+            throw new BusinessException(400, "请选择要回退到的制作步骤");
+        }
+        String targetStatus = switch (step) {
+            case "OUTLINE" -> "OUTLINE_READY";
+            case "NOVEL" -> "NOVEL_READY";
+            case "SCRIPT" -> "SCRIPT_READY";
+            case "SCENE" -> "SCENE_READY";
+            case "SHOT" -> "SHOT_READY";
+            case "DIALOGUE" -> "DIALOGUE_READY";
+            case "IMAGE" -> "IMAGE_READY";
+            default -> throw new BusinessException(400, "不支持回退到该步骤：" + step);
+        };
+        int currentRank = workflowStepRank(episode.status());
+        int targetRank = workflowStepRank(targetStatus);
+        if (targetRank >= currentRank) {
+            throw new BusinessException(400, "只能回退到当前进度之前的步骤");
+        }
+
+        recycleAssetsAfterStep(episodeId, targetRank);
+        workflowRepository.failActiveTasksByEpisode(episodeId, "制作进度已回退到 " + step + "，旧异步任务已作废");
+        if (targetRank < workflowStepRank("SHOT_READY")) {
+            workflowRepository.deleteShotsByEpisode(episodeId);
+        } else if (targetRank < workflowStepRank("DIALOGUE_READY")) {
+            workflowRepository.clearShotDialoguesByEpisode(episodeId);
+        }
+        if (targetRank < workflowStepRank("SCENE_READY")) {
+            workflowRepository.deleteScenesByEpisode(episodeId);
+        }
+        workflowRepository.rollbackEpisodeContent(
+                episodeId,
+                targetRank < workflowStepRank("NOVEL_READY"),
+                targetRank < workflowStepRank("SCRIPT_READY"),
+                targetStatus
+        );
+        workflowRepository.createTask(episode.seriesId(), episodeId, null, "EPISODE_STEP_ROLLBACK", "SUCCEEDED",
+                "已回退到步骤：" + step + "，后续内容已清理");
         return seriesService.episodeDetail(episodeId);
     }
 
@@ -477,6 +526,10 @@ public class DramaGenerationService {
                     shot.cameraMovement(),
                     shot.composition(),
                     shot.transitionType(),
+                    shot.continuityType(),
+                    shot.startState(),
+                    shot.endState(),
+                    shot.continuityNote(),
                     shot.soundEffect(),
                     shot.musicCue(),
                     shot.voiceOver(),
@@ -554,7 +607,7 @@ public class DramaGenerationService {
         DramaSceneRecord scene = workflowRepository.findScene(sceneId)
                 .orElseThrow(() -> new BusinessException(404, "场景不存在"));
         DramaEpisodeRecord episode = workflowRepository.findEpisode(scene.episodeId())
-                .orElseThrow(() -> new BusinessException(404, "场景所属分集不存在"));
+                .orElseThrow(() -> new BusinessException(404, "鍦烘櫙鎵€灞炲垎闆嗕笉瀛樺湪"));
         ensureEpisodeStepReached(episode.status(), "DIALOGUE_READY", "请先完成台词生成步骤，再生成场景参考图");
         if (assetRepository.existsBySceneAndAssetType(sceneId, "SCENE_IMAGE")
                 || workflowRepository.existsNonFailedTaskByTargetAndTaskType("SCENE", sceneId, "SCENE_IMAGE_GENERATE")) {
@@ -651,13 +704,42 @@ public class DramaGenerationService {
                 .orElseThrow(() -> new BusinessException(404, "镜头不存在"));
         DramaEpisodeRecord episode = workflowRepository.findEpisode(shot.episodeId())
                 .orElseThrow(() -> new BusinessException(404, "镜头所属分集不存在"));
+        ensureEpisodeStepReached(episode.status(), "IMAGE_READY", "请先完成图片步骤，再生成镜头视频");
         if (assetRepository.existsByShotAndAssetType(shotId, "SHOT_VIDEO")
                 || workflowRepository.existsNonFailedTaskByShotAndTaskType(shotId, "SHOT_VIDEO_GENERATE")) {
-            throw new BusinessException(400, "数据已存在，请删除后再生成");
+            throw new BusinessException(400, "镜头视频已存在或正在生成，请删除后再生成");
         }
-        String providerTaskId = videoGenerationClient.submitVideoTask(request == null ? "" : request.instruction());
-        Long taskId = workflowRepository.createTask(episode.seriesId(), shot.episodeId(), shotId, "SHOT_VIDEO_GENERATE", "PENDING", "providerTaskId=" + providerTaskId);
-        return task(taskId);
+        DramaSeriesRecord series = findSeries(episode.seriesId());
+        DramaSceneRecord scene = shot.sceneId() == null ? null : workflowRepository.findScene(shot.sceneId()).orElse(null);
+        return videoGenerationService.submit(series, episode, scene, shot);
+    }
+
+    public List<DramaTaskVo> generateEpisodeShotVideos(Long episodeId) {
+        DramaEpisodeRecord episode = workflowRepository.findEpisode(episodeId)
+                .orElseThrow(() -> new BusinessException(404, "分集不存在"));
+        ensureEpisodeStepReached(episode.status(), "IMAGE_READY", "请先完成图片步骤，再生成镜头视频");
+        List<DramaShotRecord> shots = workflowRepository.listShotsByEpisode(episodeId);
+        if (shots.isEmpty()) {
+            throw new BusinessException(400, "请先完成镜头拆分，再生成视频");
+        }
+        DramaSeriesRecord series = findSeries(episode.seriesId());
+        List<DramaSceneRecord> scenes = workflowRepository.listScenesByEpisode(episodeId);
+        List<DramaTaskVo> tasks = new ArrayList<>();
+        for (DramaShotRecord shot : shots) {
+            if (assetRepository.existsByShotAndAssetType(shot.id(), "SHOT_VIDEO")
+                    || workflowRepository.existsNonFailedTaskByShotAndTaskType(shot.id(), "SHOT_VIDEO_GENERATE")) {
+                continue;
+            }
+            DramaSceneRecord scene = scenes.stream()
+                    .filter(item -> item.id().equals(shot.sceneId()))
+                    .findFirst()
+                    .orElse(null);
+            tasks.add(videoGenerationService.submit(series, episode, scene, shot));
+        }
+        if (tasks.isEmpty()) {
+            throw new BusinessException(400, "本集镜头视频已全部存在或正在生成，无需重复生成");
+        }
+        return tasks;
     }
 
     public DramaTaskVo task(Long taskId) {
@@ -692,6 +774,43 @@ public class DramaGenerationService {
         }
     }
 
+
+    private void recycleAssetsAfterStep(Long episodeId, int targetRank) {
+        List<DramaAssetRecord> assets = assetRepository.listByEpisode(episodeId, 1000);
+        for (DramaAssetRecord asset : assets) {
+            if (!shouldRecycleAssetAfterRollback(asset, targetRank)) {
+                continue;
+            }
+            assetService.moveAssetToRecycle(asset);
+            assetRepository.deleteById(asset.id());
+        }
+    }
+
+    private boolean shouldRecycleAssetAfterRollback(DramaAssetRecord asset, int targetRank) {
+        String assetType = asset.assetType() == null ? "" : asset.assetType();
+        if (targetRank < workflowStepRank("IMAGE_READY")) {
+            return assetType.contains("IMAGE") || assetType.contains("VIDEO");
+        }
+        if (targetRank < workflowStepRank("VIDEO_READY")) {
+            return assetType.contains("VIDEO");
+        }
+        return false;
+    }
+
+    private int workflowStepRank(String status) {
+        return switch (status == null ? "" : status) {
+            case "OUTLINE_READY" -> 0;
+            case "NOVEL_READY" -> 1;
+            case "SCRIPT_READY" -> 2;
+            case "SCENE_READY" -> 3;
+            case "SHOT_READY" -> 4;
+            case "DIALOGUE_READY" -> 5;
+            case "IMAGE_READY" -> 6;
+            case "VIDEO_READY" -> 7;
+            default -> 0;
+        };
+    }
+
     private DramaSeriesRecord ensureInternalStoryOutline(DramaSeriesRecord series) {
         if (hasText(series.fullStory())) {
             return series;
@@ -716,7 +835,7 @@ public class DramaGenerationService {
             Path saveDirectory = assetService.ensureSeriesRoot(series.id())
                     .resolve("场景图")
                     .resolve(safeFileName("第" + episode.episodeNo() + "集-" + episode.id()))
-                    .resolve(safeFileName("场景-" + scene.id() + "-" + scene.name()))
+                    .resolve(safeFileName("鍦烘櫙-" + scene.id() + "-" + scene.name()))
                     .normalize();
             return new DramaImageGenerationContext(
                     series.id(),
@@ -751,10 +870,9 @@ public class DramaGenerationService {
     ) {
         try {
             Path saveDirectory = assetService.ensureSeriesRoot(series.id())
-                    .resolve("镜头图")
                     .resolve(safeFileName("第" + episode.episodeNo() + "集-" + episode.id()))
+                    .resolve("镜头")
                     .resolve(safeFileName("镜头-" + shot.shotNo() + "-" + shot.id()))
-                    .resolve("图片")
                     .normalize();
             return new DramaImageGenerationContext(
                     series.id(),
@@ -812,7 +930,7 @@ public class DramaGenerationService {
                 nullToDefault(scene.atmosphere(), "暂无"),
                 nullToDefault(scene.plotPurpose(), "暂无"),
                 formatCharactersForPrompt(characters),
-                nullToDefault(instruction, "无")
+                nullToDefault(instruction, "暂无")
         );
         return buildEnglishVisualPromptByTextModel(productionBrief, """
                 Generate one cinematic environment reference image for a short drama scene.
@@ -833,9 +951,8 @@ public class DramaGenerationService {
             String instruction
     ) {
         String productionBrief = """
-                镜头参考图/首帧图生产资料：
-                - 目标：生成短剧镜头级参考图，也可作为后续视频生成首帧方向。
-                - 项目设定：
+                镜头首帧图生产资料：
+                - 项目生产设定：
                 %s
                 - 当前分集：第 %s 集《%s》
                 - 分集摘要：%s
@@ -846,7 +963,11 @@ public class DramaGenerationService {
                 - 镜头编号：%s
                 - 景别：%s
                 - 镜头动作：%s
-                - 镜头台词：%s
+                - 连续性类型：%s
+                - 镜头开始状态：%s
+                - 镜头结束状态：%s
+                - 连续性说明：%s
+                - 台词或旁白：%s
                 - 原始图片提示词：%s
                 - 角色资料：%s
                 - 用户额外要求：%s
@@ -862,10 +983,14 @@ public class DramaGenerationService {
                 shot.shotNo(),
                 nullToDefault(shot.shotSize(), "未设置"),
                 nullToDefault(shot.action(), "暂无"),
-                nullToDefault(shot.dialogue(), "无"),
+                nullToDefault(shot.continuityType(), "CUT"),
+                nullToDefault(shot.startState(), "暂无"),
+                nullToDefault(shot.endState(), "暂无"),
+                nullToDefault(shot.continuityNote(), "暂无"),
+                nullToDefault(shot.dialogue(), "暂无"),
                 nullToDefault(shot.imagePrompt(), "暂无"),
                 formatCharactersForPrompt(characters),
-                nullToDefault(instruction, "无")
+                nullToDefault(instruction, "暂无")
         );
         return buildEnglishVisualPromptByTextModel(productionBrief, """
                 Generate one cinematic shot reference image / first-frame image for a short drama video shot.
@@ -883,16 +1008,15 @@ public class DramaGenerationService {
                 Your final answer must be ASCII English only.
                 Do not output Chinese, Japanese, Korean, Spanish, French, Russian, Arabic, emoji, full-width punctuation, Markdown, code fences, explanations, labels, or notes.
                 If the source material is Chinese, rewrite its meaning into natural professional English image-prompt language.
-                你是短剧视觉设定师和 AI 图片提示词工程师。
-                请把下面的中文制作资料改写成英文图片生成提示词，不是逐字翻译，而是生成图片模型容易执行的专业英文生产提示词。
-
+                你是短剧视觉设定师和 AI 图片提示词工程师。请把下面的中文制作资料改写成英文图片生成提示词。
+                这不是逐字翻译，而是生成图片模型容易执行的专业英文生产提示词。
                 必须遵守：
                 1. 只输出英文提示词，不要 Markdown，不要解释，不要输出中文。
                 2. 不要丢失项目类型、题材、风格、场景地点、镜头动作、台词、角色关系等核心信息。
                 3. 不要添加资料里没有的核心人物身份，不要改变角色性别、年龄感、服装和气质。
-                4. 输出必须包含：subject, environment, composition, lighting, mood, camera/shot style, visual consistency rules。
-                5. 禁止：text, subtitles, logo, watermark, modern objects that contradict the story world。
-                6. 结尾必须加入“图片类型要求”里的构图比例要求，以及：cinematic realism, high quality production still, coherent visual identity, no text, no watermark。
+                4. 输出必须包含 subject, environment, composition, lighting, mood, camera/shot style, visual consistency rules.
+                5. 禁止 text, subtitles, logo, watermark, modern objects that contradict the story world.
+                6. 结尾必须加入图片类型要求里的构图比例要求，以及 cinematic realism, high quality production still, coherent visual identity, no text, no watermark.
 
                 图片类型要求：
                 %s
@@ -965,10 +1089,9 @@ public class DramaGenerationService {
                 %s
 
                 输出要求：
-                - 场景数量必须以“项目单集时长”和剧情自然段落为准，不要使用固定 3 到 8 个这种机械规则。
+                - 场景数量必须以“项目单集时长”和剧情自然段落为准，不要机械固定 3 到 8 个。
                 - 每个场景必须服务剧情推进，地点、时间、冲突目标发生明显变化时才拆新场景。
-                - 只输出如下结构，不要输出解释：
-
+                - 只输出如下结构，不要输出解释。
                 [SCENE]
                 name: 场景名称
                 location: 拍摄地点
@@ -986,18 +1109,18 @@ public class DramaGenerationService {
                 nullToDefault(episode.cliffhanger(), "暂无"),
                 formatCharactersForPrompt(characters),
                 limitText(episode.script(), 12000),
-                nullToDefault(instruction, "无")
+                nullToDefault(instruction, "暂无")
         );
     }
 
     private String buildEpisodeShotsPrompt(DramaSeriesRecord series, DramaEpisodeRecord episode, List<DramaSceneRecord> scenes, List<DramaCharacterRecord> characters, String instruction) {
         return """
-                你是专业短剧导演和分镜师。请根据已拆分好的场景生成“镜头拆分”。
+                你是专业短剧导演和分镜师。请根据已经拆分好的场景生成“镜头拆分”。
 
                 镜头拆分定义：
                 - 镜头是视频生成的最小生产单位。
                 - 一个场景应拆成多个连续镜头，但不能为了凑数量硬拆。
-                - 每个镜头需要明确景别、动作、图片提示词、视频提示词。
+                - 每个镜头必须明确景别、预计时长、运镜、构图、动作、图片提示词、视频提示词。
                 - 不要生成台词，台词会在后续“台词生成”步骤单独处理。
                 - 必须根据项目单集时长控制镜头数量：%s
 
@@ -1025,19 +1148,27 @@ public class DramaGenerationService {
                 - 镜头总数必须优先服从项目单集时长，不能按每个场景固定数量机械扩张。
                 - sceneIndex 必须对应已有场景序号。
                 - imagePrompt 必须结合项目类型、题材、风格、角色资料、场景地点和当前镜头动作，不要生成通用模板提示词。
-                - videoPrompt 必须结合项目单集时长控制单镜头节奏，写清动作、运镜、时长感觉和情绪变化。
-                - 只输出如下结构，不要输出解释：
-
+                - videoPrompt 必须结合项目单集时长控制单镜头节奏，写清动作、运镜、时长感和情绪变化。
                 - durationSeconds 必须是 2 到 12 秒之间的整数，常规镜头建议 4 到 7 秒。
-                - cameraMovement 必须写清固定镜头、缓慢推近、横移、跟拍、拉远、摇镜等具体运镜。
-                - composition 必须写清主体位置、前景/背景、人物关系和画面重心。
-                - transitionType、soundEffect、musicCue、voiceOver 用于后续视频剪辑和声音设计，不要留空，没有旁白时 voiceOver 写无。                [SHOT]
+                - cameraMovement 必须写清固定镜头、缓慢推进、横移、跟拍、拉远、摇镜等具体运镜。
+                - composition 必须写清主体位置、前景、背景、人物关系和画面重心。
+                - transitionType、soundEffect、musicCue、voiceOver 用于后续视频剪辑和声音设计，不要留空；没有旁白时 voiceOver 写“无”。
+                - 必须输出 continuityType/startState/endState/continuityNote。continuityType 只能是 CONTINUOUS、SAME_SCENE、CUT、TRANSITION。
+                - 相邻镜头必须连贯：人物位置、身体朝向、视线方向、情绪、手部动作、空间关系、光线、服装和道具不能突然跳变。
+                - startState 写清镜头第一帧状态，endState 写清镜头结束状态，continuityNote 写清本镜头如何接上一镜头以及如何引出下一镜头。
+                - 镜头描述必须覆盖人物站位、表情、肢体、手部、镜头方向、环境细节、运动起止状态，禁止重复身体、重复头部、无原因瞬移、无原因换装。
+                - 只输出如下结构，不要输出解释。
+                [SHOT]
                 sceneIndex: 1
                 shotSize: 景别
                 durationSeconds: 5
                 cameraMovement: 运镜方式
                 composition: 画面构图
                 transitionType: 转场方式
+                continuityType: CUT
+                startState: 镜头开始时的人物位置、姿态、表情、视线、道具和环境状态
+                endState: 镜头结束时的人物位置、姿态、表情、视线、道具和环境状态
+                continuityNote: 本镜头与上一镜头、下一镜头的动作和情绪衔接说明
                 soundEffect: 音效提示
                 musicCue: 配乐情绪
                 voiceOver: 旁白，没有则写无
@@ -1056,7 +1187,7 @@ public class DramaGenerationService {
                 formatCharactersForPrompt(characters),
                 formatScenesForPrompt(scenes),
                 limitText(episode.script(), 12000),
-                nullToDefault(instruction, "无")
+                nullToDefault(instruction, "暂无")
         );
     }
 
@@ -1070,7 +1201,6 @@ public class DramaGenerationService {
                 - 台词要短剧化：短、狠、清楚，有冲突，有情绪，有推进。
                 - 如果一个镜头适合旁白，可以写“旁白：...”。
                 - 台词必须匹配项目类型、题材、风格和角色关系，不能写成通用对白。
-
                 %s
 
                 当前分集：
@@ -1097,8 +1227,7 @@ public class DramaGenerationService {
                 输出要求：
                 - 必须覆盖每一个镜头。
                 - shotNo 必须对应镜头编号。
-                - 只输出如下结构，不要输出解释：
-
+                - 只输出如下结构，不要输出解释。
                 [DIALOGUE]
                 shotNo: 1
                 dialogue: 台词内容
@@ -1114,7 +1243,7 @@ public class DramaGenerationService {
                 formatScenesForPrompt(scenes),
                 formatShotsForPrompt(shots),
                 limitText(episode.script(), 12000),
-                nullToDefault(instruction, "无")
+                nullToDefault(instruction, "暂无")
         );
     }
 
@@ -1152,6 +1281,10 @@ public class DramaGenerationService {
             String cameraMovement = extractField(block, "cameraMovement");
             String composition = extractField(block, "composition");
             String transitionType = extractField(block, "transitionType");
+            String continuityType = normalizeContinuityType(extractField(block, "continuityType"));
+            String startState = extractField(block, "startState");
+            String endState = extractField(block, "endState");
+            String continuityNote = extractField(block, "continuityNote");
             String soundEffect = extractField(block, "soundEffect");
             String musicCue = extractField(block, "musicCue");
             String voiceOver = extractField(block, "voiceOver");
@@ -1166,6 +1299,10 @@ public class DramaGenerationService {
                         limitText(cameraMovement, 120),
                         limitText(composition, 300),
                         limitText(transitionType, 80),
+                        continuityType,
+                        limitText(startState, 800),
+                        limitText(endState, 800),
+                        limitText(continuityNote, 1000),
                         limitText(soundEffect, 200),
                         limitText(musicCue, 200),
                         limitText(voiceOver, 500),
@@ -1232,7 +1369,7 @@ public class DramaGenerationService {
 
     private String buildShotCountGuidance(Integer durationMinutes) {
         int[] range = shotCountRange(durationMinutes);
-        return "单集约 " + safeDuration(durationMinutes) + " 分钟，建议拆 " + range[0] + " 到 " + range[1] + " 个镜头；单镜头通常 4 到 7 秒，AI 视频生成需要优先控制镜头数量和镜头目的。";
+        return "单集约 " + safeDuration(durationMinutes) + " 分钟，建议拆 " + range[0] + " 到 " + range[1] + " 个镜头；单镜头通常 4 到 7 秒，优先控制镜头数量和镜头目的。";
     }
 
     private int[] sceneCountRange(Integer durationMinutes) {
@@ -1274,6 +1411,14 @@ public class DramaGenerationService {
         return Math.max(2, Math.min(durationSeconds, 12));
     }
 
+    private String normalizeContinuityType(String value) {
+        String text = nullToEmpty(value).trim().toUpperCase();
+        return switch (text) {
+            case "CONTINUOUS", "SAME_SCENE", "CUT", "TRANSITION" -> text;
+            default -> "CUT";
+        };
+    }
+
     private String buildStoryBriefPrompt(DramaSeriesRecord series, String requirement) {
         return """
                 你是企业级短剧策划总监。请基于下面的短剧项目信息，生成一份给用户确认的故事雏形。
@@ -1299,7 +1444,7 @@ public class DramaGenerationService {
                 输出格式必须严格如下，不要输出任何额外解释：
                 <ORIGINAL_STORY>
                 这里输出故事原文。它必须是小说式/故事正文，不是分集大纲，不是分场剧本，不是项目设定表。
-                可以使用自然段或“第一章/第二章”这种小说章节，但严禁出现“第1集”“第01集”“第几集”“本集”“下一集”等分集字样。
+                可以使用自然段或“第一章、第二章”这种小说章节，但严禁出现“第1集”“第01集”“第几集”“本集”“下一集”等分集字样。
                 </ORIGINAL_STORY>
                 <STORY_SUMMARY>
                 这里输出整部短剧的总摘要，只能是 1 到 3 句话。不要写每集摘要，不要列分集。
@@ -1389,7 +1534,6 @@ public class DramaGenerationService {
                 故事原文：%s
                 """.formatted(series.name(), series.type(), nullToDefault(series.style(), "快节奏、强冲突、强反转"), nullToDefault(series.storySummary(), "暂无"), nullToDefault(series.originalStory(), "暂无"));
     }
-
     private String buildEpisodeBreakdownPrompt(DramaSeriesRecord series, GenerateRequest request, List<String> historicalRequirements) {
         int maxEpisodes = resolveEpisodeUpperLimit(series, request);
         return """
@@ -1399,12 +1543,13 @@ public class DramaGenerationService {
                 1. 项目总集数只是建议上限，不是必须生成的目标。
                 2. 如果故事原文体量和剧情容量不足以拆到建议集数，不要强行注水，不要硬拆。
                 3. 每一集必须有独立的戏剧任务、情绪推进、人物关系变化或信息揭示。
-                4. 每一集必须有短剧开场钩子和结尾悬念，适合后续继续生成单集剧本、场景和镜头。
+                4. 每一集必须有短剧开场钩子和结尾悬念，适合后续继续生成单集正文、剧本、场景和镜头。
                 5. 如果故事确实不适合拆分，请返回 1 到 2 集，不要为了凑数制造重复内容。
                 6. 输出必须严格使用下面标签格式，不要输出 Markdown 表格，不要输出额外解释。
+                7. 如果这是重新拆分，必须参考历史拆分要求记忆，避免重复违反用户已经提出过的要求。
 
                 <STORY_OUTLINE>
-                这里输出内部故事大纲，用于指导后续单集剧本生成。包含：整部故事主线、主要角色关系、关键冲突、反转节点、结局方向、分集拆分原则。
+                这里输出内部故事大纲，用于指导后续单集正文和剧本生成。包含：整部故事主线、主要角色关系、关键冲突、反转节点、结局方向、分集拆分原则。
                 </STORY_OUTLINE>
                 <EPISODES>
                 <EPISODE>
@@ -1440,7 +1585,6 @@ public class DramaGenerationService {
                 limitText(series.originalStory(), 24000)
         );
     }
-
     private String buildEpisodeScriptPrompt(
             DramaSeriesRecord series,
             DramaEpisodeRecord episode,
@@ -1449,16 +1593,22 @@ public class DramaGenerationService {
             String regenerateReason
     ) {
         return """
-                你是企业级短剧编剧、导演和制片统筹。请基于项目数据库中的结构化资料，生成当前单集的完整可拍摄剧本。
-                本次不使用 RAG，不要虚构数据库资料之外的核心设定；如需补充细节，必须服务于当前分集摘要、钩子和悬念。
+                你是企业级短剧编剧、导演和制片统筹。请把“当前本集小说正文”改编成可拍摄的单集剧本。
 
-                输出规则：
+                最高优先级规则：
+                1. 当前本集小说正文是最高优先级素材，剧本必须围绕它改编，不能另写一个新故事。
+                2. 如果本集小说正文与分集摘要、故事总纲、故事原文存在细节冲突，以“当前本集小说正文”为准。
+                3. 项目故事原文、故事摘要、内部分集大纲只用于校验人物、世界观、前后集连续性，不能替代本集正文重新发明剧情。
+                4. 重新生成原因只能调整表达方式、节奏、结构或指定细节，不能改变主线、人物身份、核心事件和本集结局。
+                5. 不允许新增数据库资料之外的核心人物、核心设定、核心反转。
+                6. 不允许把后续集剧情提前写进本集，不允许泄露后续核心反转。
+
+                输出要求：
                 1. 必须只输出下面标签格式，不要输出额外解释。
-                2. 剧本必须是“单集剧本”，不是故事摘要，不是分集大纲。
+                2. 剧本必须是“单集可拍摄剧本”，不是故事摘要，不是分集大纲。
                 3. 必须包含场次、地点、时间、出场人物、动作、对白、情绪节奏和结尾钩子。
-                4. 必须保持与前后分集连续，不要提前透支后续集核心反转。
-                5. 当前集时长约 %s 分钟，请按竖屏短剧节奏写，开头 5 秒要有强冲突或强疑问。
-                6. 若有重新生成原因，必须优先满足原因，但不能破坏项目世界观和角色一致性。
+                4. 当前集时长约 %s 分钟，请按短剧节奏写，开头 5 秒要有强冲突或强疑问。
+                5. 每场戏都要能追溯到“当前本集小说正文”里的事件，不要脱离正文。
 
                 <EPISODE_SCRIPT>
                 这里输出完整单集剧本。
@@ -1481,12 +1631,14 @@ public class DramaGenerationService {
                 当前分集：
                 第 %s 集
                 标题：%s
-                摘要：%s
-                本集小说正文：%s
+                分集摘要：%s
                 开场钩子：%s
                 结尾悬念：%s
 
-                全部分集列表：
+                当前本集小说正文（剧本必须以这部分为主）：
+                %s
+
+                全部分集列表（只用于连续性校验）：
                 %s
 
                 项目角色：
@@ -1504,14 +1656,14 @@ public class DramaGenerationService {
                 series.totalEpisodes(),
                 series.episodeDurationMinutes(),
                 nullToDefault(series.storySummary(), "暂无"),
-                limitText(series.fullStory(), 4000),
-                limitText(series.originalStory(), 12000),
+                limitText(series.fullStory(), 5000),
+                limitText(series.originalStory(), 18000),
                 episode.episodeNo(),
                 nullToDefault(episode.title(), "暂无"),
                 nullToDefault(episode.summary(), "暂无"),
-                limitText(episode.novelContent(), 8000),
                 nullToDefault(episode.hook(), "暂无"),
                 nullToDefault(episode.cliffhanger(), "暂无"),
+                limitText(episode.novelContent(), 14000),
                 formatEpisodesForPrompt(episodes),
                 formatCharactersForPrompt(characters),
                 nullToDefault(regenerateReason, "暂无")
@@ -1526,14 +1678,22 @@ public class DramaGenerationService {
             String regenerateReason
     ) {
         return """
-                你是专业短剧小说改编编剧。请基于整部故事原文、分集摘要、角色设定和前后集关系，扩写当前集的小说式正文。
+                你是专业短剧小说改编编剧。请根据“项目故事原文”和“当前分集边界”，扩写当前这一集的小说正文。
 
-                输出规则：
+                最高优先级规则：
+                1. 必须写同一个故事里的当前分集，不能另起炉灶，不能换主角，不能换世界观。
+                2. 项目故事原文是主线依据；当前分集标题、摘要、开场钩子、结尾悬念是本集边界。
+                3. 本集正文必须只覆盖当前第 %s 集应该发生的剧情，不要提前写后续集核心内容。
+                4. 重新生成原因只能调整本集表达、篇幅、节奏和重点；不能推翻项目故事原文、角色设定和分集主线。
+                5. 如需补充细节，只能补充能服务于当前分集摘要的动作、心理、环境、冲突推进，不得新增核心设定。
+                6. 不允许新增核心设定、核心人物或无关支线。
+
+                输出要求：
                 1. 必须只输出下面标签格式，不要输出额外解释。
                 2. 正文必须是小说式叙事，不是分场剧本，不是对白脚本，不是镜头表。
                 3. 可以自然分段，重点写人物行动、心理、情绪、冲突推进和关键反转。
-                4. 必须严格服务当前集摘要、开场钩子和结尾悬念，不要提前写后续集核心内容。
-                5. 文风要适合后续改编成竖屏短剧：冲突明确、节奏紧、情绪强。
+                4. 正文需要为后续剧本、场景拆分、镜头拆分提供足够细节。
+                5. 风格适合短剧/漫剧后续生产：冲突明确、节奏紧、画面感强。
 
                 <EPISODE_NOVEL>
                 这里输出本集小说正文。
@@ -1545,20 +1705,23 @@ public class DramaGenerationService {
                 简介：%s
                 题材：%s
                 风格：%s
+                计划总集数：%s
+                单集时长：%s 分钟
 
                 故事资料：
                 故事摘要：%s
                 内部故事大纲：%s
-                故事原文：%s
+                项目故事原文（必须保持同一主线）：
+                %s
 
-                当前分集：
+                当前分集边界：
                 第 %s 集
                 标题：%s
-                摘要：%s
+                分集摘要：%s
                 开场钩子：%s
                 结尾悬念：%s
 
-                全部分集列表：
+                全部分集列表（用于判断当前集在全剧位置）：
                 %s
 
                 项目角色：
@@ -1567,14 +1730,17 @@ public class DramaGenerationService {
                 用户重新生成原因：
                 %s
                 """.formatted(
+                episode.episodeNo(),
                 series.name(),
                 series.type(),
                 nullToDefault(series.intro(), "暂无"),
                 nullToDefault(series.theme(), "暂无"),
                 nullToDefault(series.style(), "快节奏、强冲突、强反转"),
+                series.totalEpisodes(),
+                series.episodeDurationMinutes(),
                 nullToDefault(series.storySummary(), "暂无"),
-                limitText(series.fullStory(), 4000),
-                limitText(series.originalStory(), 14000),
+                limitText(series.fullStory(), 6000),
+                limitText(series.originalStory(), 26000),
                 episode.episodeNo(),
                 nullToDefault(episode.title(), "暂无"),
                 nullToDefault(episode.summary(), "暂无"),
@@ -1655,7 +1821,7 @@ public class DramaGenerationService {
 
     private String cleanupEpisodeField(String value) {
         return nullToEmpty(value)
-                .replaceAll("(?i)^第\\s*\\d+\\s*集[：:、\\s-]*", "")
+                .replaceAll("(?i)^第\\s*\\d+\\s*集[：:、《\\s-]*", "")
                 .trim();
     }
 
@@ -1710,7 +1876,7 @@ public class DramaGenerationService {
         String style = nullToDefault(series.style(), "快节奏、强冲突、强反转");
         String originalStory = "【故事原文】\n"
                 + "第一章：命运的裂缝\n"
-                + series.name() + "的故事从一次突如其来的压迫开始。主角原本只是困在普通生活里的人，却因为一场误会、一次背叛或一个被隐藏的秘密，被推到所有人目光的中心。对手不断施压，身边的人各怀心事，主角只能在屈辱和怀疑中寻找真相。\n\n"
+                + series.name() + " 的故事从一次突如其来的危机开始。主角原本只是困在普通生活里的人，却因为一场误会、一次背叛或一个被隐藏的秘密，被推到所有人目光的中心。对手不断施压，身边的人各怀心事，主角只能在屈辱和怀疑中寻找真相。\n\n"
                 + "第二章：反击的线索\n"
                 + "随着关键线索逐渐浮出水面，主角发现眼前的困境并不是偶然，而是长期被设计、被隐瞒、被操控的结果。亲密关系开始动摇，旧日恩怨重新出现，主角也从被动承受转向主动追问。\n\n"
                 + "第三章：真相与选择\n"
@@ -1729,17 +1895,17 @@ public class DramaGenerationService {
                 + "类型：" + series.type() + "\n"
                 + "风格：" + style + "\n\n"
                 + "一、主题表达：用高压困境和情绪反击，完成观众对公平、尊严和真相的情绪期待。\n"
-                + "二、核心角色：主角负责承载代入和成长，反派负责制造持续压力，关键配角负责提供误会、帮助或反转。\n"
+                + "二、核心角色：主角承载代入和成长，反派制造持续压力，关键配角提供误会、帮助或反转。\n"
                 + "三、故事主线：主角从被动卷入冲突开始，通过寻找线索、识破谎言、修正关系，最终揭开真相并完成反击。\n"
                 + "四、核心冲突：外部压迫、人物误解、隐藏秘密和利益争夺共同推动故事。\n"
-                + "五、结构设计：开端建立强困境，中段持续升级压力并释放线索，后段集中反转和情绪兑现，结尾完成关系与目标的收束。\n"
+                + "五、结构设计：开端建立强困境，中段持续升级压力并释放线索，后段集中反转和情绪兑现。\n"
                 + "六、反转策略：每个关键阶段只揭开一部分真相，保留身份、证据、动机和关系上的二次反转。\n"
-                + "七、拆分原则：后续生成分集大纲时，再把这份整部故事大纲拆成具体集数、每集摘要、开场钩子和结尾悬念。";
+                + "七、拆分原则：后续生成分集大纲时，再把这份完整故事大纲拆成具体集数、每集摘要、开场钩子和结尾悬念。";
     }
 
     private String buildFallbackStoryBrief(DramaSeriesRecord series, String requirement) {
         return "【核心故事一句话】\n"
-                + "《" + series.name() + "》是一部" + series.type() + "短剧，讲述主角在低位困境中被误解、被压制，随后依靠隐藏能力、关键证据或身份反转完成反击的故事。\n\n"
+                + "《" + series.name() + "》是一部 " + series.type() + " 短剧，讲述主角在低位困境中被误解、被压制，随后依靠隐藏能力、关键证据或身份反转完成反击的故事。\n\n"
                 + "【主要角色】\n主角：处在情绪低谷但具备反击潜力的人物。\n关键配角：既能提供帮助，也可能制造误会或隐藏信息。\n主要反派：持续给主角施压，推动冲突升级。\n\n"
                 + "【故事主线】\n故事从一次高压事件切入，主角被迫卷入核心矛盾。前期用误会和压迫制造代入，中段通过线索推进和人物关系反转提升爽点，后段完成身份、真相或情感的集中兑现。\n\n"
                 + "【用户补充要求】\n" + nullToDefault(requirement, "暂无");
@@ -1776,7 +1942,7 @@ public class DramaGenerationService {
             return "暂无";
         }
         return episodes.stream()
-                .map(episode -> "第%s集《%s》：%s｜开场：%s｜结尾：%s".formatted(
+                .map(episode -> "第 %s 集《%s》：%s；开场：%s；结尾：%s".formatted(
                         episode.episodeNo(),
                         nullToDefault(episode.title(), "未命名"),
                         limitText(episode.summary(), 500),
@@ -1845,6 +2011,10 @@ public class DramaGenerationService {
                     .append("\n运镜：").append(nullToDefault(shot.cameraMovement(), "未设置"))
                     .append("\n构图：").append(nullToDefault(shot.composition(), "未设置"))
                     .append("\n转场：").append(nullToDefault(shot.transitionType(), "未设置"))
+                    .append("\nContinuity type: ").append(nullToDefault(shot.continuityType(), "CUT"))
+                    .append("\nShot start state: ").append(nullToDefault(shot.startState(), "none"))
+                    .append("\nShot end state: ").append(nullToDefault(shot.endState(), "none"))
+                    .append("\nContinuity note: ").append(nullToDefault(shot.continuityNote(), "none"))
                     .append("\n音效：").append(nullToDefault(shot.soundEffect(), "未设置"))
                     .append("\n配乐：").append(nullToDefault(shot.musicCue(), "未设置"))
                     .append("\n旁白：").append(nullToDefault(shot.voiceOver(), "无"))
@@ -1921,7 +2091,7 @@ public class DramaGenerationService {
                 return true;
             }
         }
-        return text.matches(".*(这|它|这个|这篇|这段).*(讲|说|写).*(什么|啥).*");
+        return text.matches(".*(这个故事|这篇|这段).*(讲|说|写).*(什么|啥).*");
     }
 
     private boolean isStoryEditCommand(String text) {
@@ -1954,7 +2124,7 @@ public class DramaGenerationService {
     private boolean isModelFallback(String value) {
         String text = nullToEmpty(value);
         return text.isBlank()
-                || text.contains("模型配置")
+                || text.contains("妯″瀷閰嶇疆")
                 || text.contains("模型调用失败")
                 || text.contains("待接入真实文本模型")
                 || text.contains("DRAMA_TEXT_BASE_URL");
@@ -2072,6 +2242,10 @@ public class DramaGenerationService {
             String cameraMovement,
             String composition,
             String transitionType,
+            String continuityType,
+            String startState,
+            String endState,
+            String continuityNote,
             String soundEffect,
             String musicCue,
             String voiceOver,
@@ -2085,5 +2259,7 @@ public class DramaGenerationService {
     private record GeneratedDialogue(Integer shotNo, String dialogue) {
     }
 }
+
+
 
 

@@ -77,6 +77,7 @@ public class DramaProperties {
         private String completionsPath = "/chat/completions";
         private String imagesPath = "/images/generations";
         private String imageEditsPath = "/images/edits";
+        private String videosPath = "/videos";
         private String apiKey = "";
         private String model = "";
         private Integer maxTokens = 12000;
@@ -125,6 +126,14 @@ public class DramaProperties {
 
         public void setImageEditsPath(String imageEditsPath) {
             this.imageEditsPath = imageEditsPath;
+        }
+
+        public String getVideosPath() {
+            return videosPath;
+        }
+
+        public void setVideosPath(String videosPath) {
+            this.videosPath = videosPath;
         }
 
         public String getApiKey() {
