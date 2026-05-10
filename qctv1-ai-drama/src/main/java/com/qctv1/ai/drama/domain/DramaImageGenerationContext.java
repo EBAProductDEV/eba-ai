@@ -20,6 +20,8 @@ public record DramaImageGenerationContext(
         String fileNamePrefix,
         String contentType,
         String imageSize,
+        String imageQuality,
+        String imageFormat,
         Path saveDirectory
 ) {
 }

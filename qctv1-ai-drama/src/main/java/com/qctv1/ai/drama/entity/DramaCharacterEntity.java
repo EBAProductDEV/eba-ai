@@ -26,6 +26,8 @@ public class DramaCharacterEntity {
     private String appearance;
     private String costume;
     private String personality;
+    private String voiceProfileType;
+    private String voiceProfile;
     private String relationship;
     private String visualProfile;
     private Long primaryReferenceAssetId;

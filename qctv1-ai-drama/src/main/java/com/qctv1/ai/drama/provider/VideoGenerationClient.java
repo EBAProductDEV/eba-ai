@@ -15,7 +15,8 @@ public interface VideoGenerationClient {
             Path referenceImage,
             Integer seconds,
             String ratio,
-            String resolution
+            String resolution,
+            Integer fps
     ) {
     }
 

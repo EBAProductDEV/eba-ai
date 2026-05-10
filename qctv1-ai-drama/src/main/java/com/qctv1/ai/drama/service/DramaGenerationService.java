@@ -11,17 +11,21 @@ import com.qctv1.ai.drama.domain.DramaShotRecord;
 import com.qctv1.ai.drama.dto.DramaEpisodeScriptSaveRequest;
 import com.qctv1.ai.drama.dto.DramaEpisodeStepCompleteRequest;
 import com.qctv1.ai.drama.dto.DramaEpisodeStepRollbackRequest;
+import com.qctv1.ai.drama.dto.DramaImageGenerateRequest;
+import com.qctv1.ai.drama.dto.DramaVideoGenerateRequest;
 import com.qctv1.ai.drama.dto.DramaStoryAssistantChatRequest;
 import com.qctv1.ai.drama.dto.DramaStoryBriefRequest;
 import com.qctv1.ai.drama.dto.DramaStoryGenerateRequest;
 import com.qctv1.ai.drama.dto.GenerateRequest;
 import com.qctv1.ai.drama.provider.ImageGenerationClient;
 import com.qctv1.ai.drama.provider.TextGenerationClient;
+import com.qctv1.ai.drama.provider.VisionAnalysisClient;
 import com.qctv1.ai.drama.repository.DramaAssetRepository;
 import com.qctv1.ai.drama.repository.DramaCharacterRepository;
 import com.qctv1.ai.drama.repository.DramaSeriesRepository;
 import com.qctv1.ai.drama.repository.DramaWorkflowRepository;
 import com.qctv1.ai.drama.support.BusinessException;
+import com.qctv1.ai.drama.vo.DramaImagePromptPreviewVo;
 import com.qctv1.ai.drama.vo.DramaSeriesDetailVo;
 import com.qctv1.ai.drama.vo.DramaEpisodeDetailVo;
 import com.qctv1.ai.drama.vo.DramaStoryAssistantChatVo;
@@ -31,10 +35,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -53,6 +60,7 @@ public class DramaGenerationService {
     private final DramaAssetService assetService;
     private final DramaImageGenerationService imageGenerationService;
     private final DramaVideoGenerationService videoGenerationService;
+    private final VisionAnalysisClient visionAnalysisClient;
 
     public DramaGenerationService(
             DramaSeriesRepository seriesRepository,
@@ -66,7 +74,8 @@ public class DramaGenerationService {
             DramaEpisodeBreakdownMemoryService episodeBreakdownMemoryService,
             DramaAssetService assetService,
             DramaImageGenerationService imageGenerationService,
-            DramaVideoGenerationService videoGenerationService
+            DramaVideoGenerationService videoGenerationService,
+            VisionAnalysisClient visionAnalysisClient
     ) {
         this.seriesRepository = seriesRepository;
         this.workflowRepository = workflowRepository;
@@ -80,6 +89,7 @@ public class DramaGenerationService {
         this.assetService = assetService;
         this.imageGenerationService = imageGenerationService;
         this.videoGenerationService = videoGenerationService;
+        this.visionAnalysisClient = visionAnalysisClient;
     }
 
     public DramaStoryBriefVo prepareStoryBrief(Long seriesId, DramaStoryBriefRequest request) {
@@ -603,41 +613,336 @@ public class DramaGenerationService {
         return task(taskId);
     }
 
-    public DramaTaskVo generateSceneImage(Long sceneId, GenerateRequest request) {
+    public DramaImagePromptPreviewVo savedSceneImagePrompt(Long sceneId) {
+        SceneImagePreparation preparation = prepareSceneImage(sceneId, false);
+        DramaImageGenerationContext context = buildSceneImageContext(preparation.series(), preparation.episode(), preparation.scene());
+        return new DramaImagePromptPreviewVo(
+                context.targetType(),
+                context.targetId(),
+                context.assetType(),
+                context.assetSubType(),
+                "场景参考图 · " + nullToDefault(preparation.scene().name(), "未命名场景"),
+                latestAssetPrompt(preparation.episode().id(), preparation.scene().id(), null, "SCENE_IMAGE"),
+                buildImageRequestParameters(context),
+                buildReferenceImageVos(context)
+        );
+    }
+
+    public DramaImagePromptPreviewVo previewSceneImagePrompt(Long sceneId, DramaImageGenerateRequest request) {
+        SceneImagePreparation preparation = prepareSceneImage(sceneId);
+        DramaImageGenerationContext context = withImagePromptAndReferences(
+                buildSceneImageContext(preparation.series(), preparation.episode(), preparation.scene()),
+                "",
+                request
+        );
+        return new DramaImagePromptPreviewVo(
+                context.targetType(),
+                context.targetId(),
+                context.assetType(),
+                context.assetSubType(),
+                "场景参考图 · " + nullToDefault(preparation.scene().name(), "未命名场景"),
+                buildSceneImageChinesePrompt(preparation.series(), preparation.episode(), preparation.scene(), preparation.characters()),
+                buildImageRequestParameters(context),
+                buildReferenceImageVos(context)
+        );
+    }
+
+    public DramaImagePromptPreviewVo savedShotImagePrompt(Long shotId) {
+        ShotImagePreparation preparation = prepareShotImage(shotId, false);
+        DramaImageGenerationContext context = buildShotImageContext(
+                preparation.series(),
+                preparation.episode(),
+                preparation.scene(),
+                preparation.shot(),
+                preparation.characters()
+        );
+        return new DramaImagePromptPreviewVo(
+                context.targetType(),
+                context.targetId(),
+                context.assetType(),
+                context.assetSubType(),
+                "镜头 " + preparation.shot().shotNo() + " · 首帧参考图",
+                firstText(
+                        preparation.shot().imagePrompt(),
+                        latestAssetPrompt(preparation.episode().id(), null, preparation.shot().id(), "SHOT_IMAGE")
+                ),
+                buildImageRequestParameters(context),
+                buildReferenceImageVos(context)
+        );
+    }
+
+    public DramaImagePromptPreviewVo previewShotImagePrompt(Long shotId, DramaImageGenerateRequest request) {
+        ShotImagePreparation preparation = prepareShotImage(shotId);
+        DramaImageGenerationContext context = withImagePromptAndReferences(
+                buildShotImageContext(
+                        preparation.series(),
+                        preparation.episode(),
+                        preparation.scene(),
+                        preparation.shot(),
+                        preparation.characters()
+                ),
+                "",
+                request
+        );
+        return new DramaImagePromptPreviewVo(
+                context.targetType(),
+                context.targetId(),
+                context.assetType(),
+                context.assetSubType(),
+                "镜头 " + preparation.shot().shotNo() + " · 首帧参考图",
+                buildShotImageChinesePrompt(
+                        preparation.series(),
+                        preparation.episode(),
+                        preparation.scene(),
+                        preparation.shot(),
+                        preparation.characters()
+                ),
+                buildImageRequestParameters(context),
+                buildReferenceImageVos(context)
+        );
+    }
+
+    public DramaImagePromptPreviewVo savedShotVideoPrompt(Long shotId) {
+        ShotVideoPreparation preparation = prepareShotVideoPrompt(shotId, false);
+        return new DramaImagePromptPreviewVo(
+                "SHOT",
+                preparation.shot().id(),
+                "SHOT_VIDEO",
+                "VIDEO_CLIP",
+                "镜头 " + preparation.shot().shotNo() + " · 视频提示词",
+                nullToEmpty(preparation.shot().videoPrompt()).trim(),
+                buildVideoRequestParameters(preparation.series(), preparation.shot(), preparation.firstFrame()),
+                List.of(toAssetVo(preparation.firstFrame()))
+        );
+    }
+
+    public DramaImagePromptPreviewVo saveShotVideoPrompt(Long shotId, DramaVideoGenerateRequest request) {
+        ShotVideoPreparation preparation = prepareShotVideoPrompt(shotId, false);
+        String prompt = request == null ? "" : nullToEmpty(request.prompt()).trim();
+        if (!hasText(prompt)) {
+            throw new BusinessException(400, "请先填写视频生成提示词");
+        }
+        workflowRepository.updateShotVideoPrompt(preparation.shot().id(), prompt, normalizeVideoDuration(request == null ? null : request.durationSeconds()));
+        DramaShotRecord savedShot = workflowRepository.findShot(shotId).orElse(preparation.shot());
+        return new DramaImagePromptPreviewVo(
+                "SHOT",
+                savedShot.id(),
+                "SHOT_VIDEO",
+                "VIDEO_CLIP",
+                "镜头 " + savedShot.shotNo() + " · 视频提示词",
+                prompt,
+                buildVideoRequestParameters(preparation.series(), savedShot, preparation.firstFrame()),
+                List.of(toAssetVo(preparation.firstFrame()))
+        );
+    }
+
+    public DramaImagePromptPreviewVo previewShotVideoPrompt(Long shotId, DramaVideoGenerateRequest request) {
+        ShotVideoPreparation preparation = prepareShotVideoPrompt(shotId, true);
+        DramaAssetRecord referenceFrame = resolvePreviewReferenceFrame(preparation.series().id(), preparation.firstFrame(), request == null ? null : request.referenceAssetIds());
+        DramaShotRecord shot = withPreviewDuration(preparation.shot(), request == null ? null : request.durationSeconds());
+        return new DramaImagePromptPreviewVo(
+                "SHOT",
+                shot.id(),
+                "SHOT_VIDEO",
+                "VIDEO_CLIP",
+                "镜头 " + shot.shotNo() + " · 视频生成",
+                buildShotVideoPreviewPrompt(
+                        preparation.series(),
+                        preparation.episode(),
+                        preparation.scene(),
+                        shot,
+                        preparation.characters(),
+                        referenceFrame
+                ),
+                buildVideoRequestParameters(preparation.series(), shot, referenceFrame),
+                List.of(toAssetVo(referenceFrame))
+        );
+    }
+
+    private String buildShotVideoPreviewPrompt(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            DramaShotRecord shot,
+            List<DramaCharacterRecord> characters,
+            DramaAssetRecord firstFrame
+    ) {
+        String modelPrompt = buildShotVideoPreviewModelPrompt(series, episode, scene, shot, characters);
+        Path firstFramePath = Path.of(firstFrame.localPath()).toAbsolutePath().normalize();
+        assetService.ensureInsideAssetRootForWrite(firstFramePath);
+        if (!Files.exists(firstFramePath) || !Files.isRegularFile(firstFramePath)) {
+            throw new BusinessException(404, "镜头首帧图文件不存在，无法生成视频提示词");
+        }
+        String generated = visionAnalysisClient.generateShotFrameText(
+                modelPrompt,
+                List.of(firstFramePath),
+                properties.getVision().getAnalysisModel()
+        );
+        String normalized = normalizeVideoPreviewPrompt(generated);
+        if (!isUsableVideoPreviewPrompt(normalized)) {
+            throw new BusinessException(500, "视频提示词生成失败，多模态模型返回不可用：" + limitText(generated, 500));
+        }
+        return normalized;
+    }
+
+    private String buildShotVideoPreviewModelPrompt(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            DramaShotRecord shot,
+            List<DramaCharacterRecord> characters
+    ) {
+        int seconds = resolveVideoSeconds(shot);
+        String dialogue = nullToDefault(shot.dialogue(), nullToDefault(shot.voiceOver(), "无"));
+        return """
+                请根据随消息上传的首帧参考图 @图片1，以及下面的镜头资料，生成一段可直接提交给视频生成模型的中文镜头视频提示词。
+
+                生成规则：
+                - 只输出最终提示词正文，不要解释，不要 Markdown，不要 JSON。
+                - 不要输出【项目信息】、【角色与画面描述】两类章节。
+                - 必须包含【逐时间段镜头调度】、【声音与口型】、【首帧一致性要求】、【负面约束】四个章节。
+                - 【逐时间段镜头调度】按传入的视频总时长合理拆分时间段；生成的每个时间段必须符合传入的视频时长描述。
+                - 所有时间段必须从 0 秒开始，连续覆盖到总时长，不要重叠，不要缺口；最后一段必须结束于传入的视频总时长。
+                - 视频总时长必须严格等于“总时长”字段；如果镜头资料或旧提示词中出现 5 秒、0-5 秒等旧时间段，必须改写为覆盖当前总时长，不要保留 5 秒调度。
+                - 每个时间段都必须写清：镜头切换/运镜描述、人物动作描述、人物表情描述、人物台词、人物说话语气、场景变化描述。
+                - 台词/旁白参考只作为剧情含义参考，不要照抄原文；必须根据首帧人物状态、人物动作、环境压迫感和当前时间段情绪重新生成更适合视频表演的台词。
+                - 生成台词必须符合视频时长：每个时间段的台词要短、口语化、能在该段时长内自然说完；不要写长句、解释性独白或超过画面承载的信息。
+                - 若某时间段不适合说话，也要明确写“台词：无”；不要新增无关台词。
+                - 声音要求：无背景音乐、无BGM、无音效、无环境声铺底；只允许出现台词/旁白人声。
+                - 最后必须强调：第一帧必须严格按照 @图片1，人物身份、脸型、五官、发型、服装、身形、站位、构图、光影、场景都不能改变。
+                - 全程不要字幕、文字、logo、水印，不要突然切景，不要新增无关人物。
+
+                镜头资料：
+                项目名：%s
+                分集：第 %s 集《%s》
+                场景：%s；地点：%s；时间：%s；氛围：%s
+                镜头编号：%s
+                总时长：%s 秒
+                景别：%s
+                运镜：%s
+                构图：%s
+                起始状态：%s
+                结束状态：%s
+                连贯说明：%s
+                镜头简介/动作：%s
+                台词/旁白参考：%s
+                角色资料：%s
+                """.formatted(
+                nullToDefault(series.name(), "未命名项目"),
+                episode.episodeNo(),
+                nullToDefault(episode.title(), "未命名分集"),
+                scene == null ? "无" : nullToDefault(scene.name(), "未命名场景"),
+                scene == null ? "无" : nullToDefault(scene.location(), "未设置"),
+                scene == null ? "无" : nullToDefault(scene.timeOfDay(), "未设置"),
+                scene == null ? "无" : nullToDefault(scene.atmosphere(), "未设置"),
+                shot.shotNo(),
+                formatSeconds(seconds),
+                nullToDefault(shot.shotSize(), "中景"),
+                nullToDefault(shot.cameraMovement(), "固定或轻微推拉"),
+                nullToDefault(shot.composition(), "参考首帧构图"),
+                nullToDefault(shot.startState(), "参考首帧状态"),
+                nullToDefault(shot.endState(), "自然收束"),
+                nullToDefault(shot.continuityNote(), "保持镜头连续"),
+                nullToDefault(shot.videoPrompt(), nullToDefault(shot.action(), "根据首帧人物和剧情进行细腻表演")),
+                dialogue,
+                formatCharactersForPreviewPrompt(characters)
+        ).trim();
+    }
+
+    private String normalizeVideoPreviewPrompt(String text) {
+        String normalized = nullToEmpty(text).trim();
+        if (normalized.startsWith("```")) {
+            normalized = normalized.replaceFirst("^```[a-zA-Z]*\\s*", "").replaceFirst("\\s*```$", "").trim();
+        }
+        return normalized;
+    }
+
+    private boolean isUsableVideoPreviewPrompt(String text) {
+        return hasText(text)
+                && text.contains("【逐时间段镜头调度】")
+                && text.contains("【声音与口型】")
+                && text.contains("【首帧一致性要求】")
+                && text.contains("【负面约束】")
+                && text.contains("@图片1");
+    }
+
+    public DramaTaskVo generateSceneImage(Long sceneId, DramaImageGenerateRequest request) {
+        SceneImagePreparation preparation = prepareSceneImage(sceneId);
+        DramaImageGenerationContext context = buildSceneImageContext(preparation.series(), preparation.episode(), preparation.scene());
+        String prompt = request == null ? "" : nullToEmpty(request.prompt()).trim();
+        if (hasText(prompt)) {
+            return imageGenerationService.submit(withImagePromptAndReferences(context, prompt, request));
+        }
+        return imageGenerationService.submit(
+                context,
+                () -> buildSceneImagePrompt(preparation.series(), preparation.episode(), preparation.scene(), preparation.characters(), "")
+        );
+    }
+
+    private SceneImagePreparation prepareSceneImage(Long sceneId) {
+        return prepareSceneImage(sceneId, true);
+    }
+
+    private SceneImagePreparation prepareSceneImage(Long sceneId, boolean ensureGeneratable) {
         DramaSceneRecord scene = workflowRepository.findScene(sceneId)
                 .orElseThrow(() -> new BusinessException(404, "场景不存在"));
         DramaEpisodeRecord episode = workflowRepository.findEpisode(scene.episodeId())
                 .orElseThrow(() -> new BusinessException(404, "鍦烘櫙鎵€灞炲垎闆嗕笉瀛樺湪"));
         ensureEpisodeStepReached(episode.status(), "DIALOGUE_READY", "请先完成台词生成步骤，再生成场景参考图");
-        if (assetRepository.existsBySceneAndAssetType(sceneId, "SCENE_IMAGE")
-                || workflowRepository.existsNonFailedTaskByTargetAndTaskType("SCENE", sceneId, "SCENE_IMAGE_GENERATE")) {
+        if (ensureGeneratable && (assetRepository.existsBySceneAndAssetType(sceneId, "SCENE_IMAGE")
+                || workflowRepository.existsNonFailedTaskByTargetAndTaskType("SCENE", sceneId, "SCENE_IMAGE_GENERATE"))) {
             throw new BusinessException(400, "场景参考图已存在或正在生成，请删除后再生成");
         }
         DramaSeriesRecord series = findSeries(scene.seriesId());
         List<DramaCharacterRecord> characters = characterRepository.listBySeries(series.id());
+        return new SceneImagePreparation(series, episode, scene, characters);
+    }
+
+    public DramaTaskVo generateShotImage(Long shotId, DramaImageGenerateRequest request) {
+        ShotImagePreparation preparation = prepareShotImage(shotId);
+        DramaImageGenerationContext context = buildShotImageContext(
+                preparation.series(),
+                preparation.episode(),
+                preparation.scene(),
+                preparation.shot(),
+                preparation.characters()
+        );
+        String prompt = request == null ? "" : nullToEmpty(request.prompt()).trim();
+        if (hasText(prompt)) {
+            workflowRepository.updateShotImagePrompt(preparation.shot().id(), prompt);
+            return imageGenerationService.submit(withImagePromptAndReferences(context, prompt, request));
+        }
         return imageGenerationService.submit(
-                buildSceneImageContext(series, episode, scene),
-                () -> buildSceneImagePrompt(series, episode, scene, characters, request == null ? "" : request.instruction())
+                context,
+                () -> buildShotImagePrompt(
+                        preparation.series(),
+                        preparation.episode(),
+                        preparation.scene(),
+                        preparation.shot(),
+                        preparation.characters(),
+                        ""
+                )
         );
     }
 
-    public DramaTaskVo generateShotImage(Long shotId, GenerateRequest request) {
+    private ShotImagePreparation prepareShotImage(Long shotId) {
+        return prepareShotImage(shotId, true);
+    }
+
+    private ShotImagePreparation prepareShotImage(Long shotId, boolean ensureGeneratable) {
         DramaShotRecord shot = workflowRepository.findShot(shotId)
                 .orElseThrow(() -> new BusinessException(404, "镜头不存在"));
         DramaEpisodeRecord episode = workflowRepository.findEpisode(shot.episodeId())
                 .orElseThrow(() -> new BusinessException(404, "镜头所属分集不存在"));
         ensureEpisodeStepReached(episode.status(), "DIALOGUE_READY", "请先完成台词生成步骤，再生成镜头参考图");
-        if (assetRepository.existsByShotAndAssetType(shotId, "SHOT_IMAGE")
-                || workflowRepository.existsNonFailedTaskByShotAndTaskType(shotId, "SHOT_IMAGE_GENERATE")) {
+        if (ensureGeneratable && (assetRepository.existsByShotAndAssetType(shotId, "SHOT_IMAGE")
+                || workflowRepository.existsNonFailedTaskByShotAndTaskType(shotId, "SHOT_IMAGE_GENERATE"))) {
             throw new BusinessException(400, "镜头参考图已存在或正在生成，请删除后再生成");
         }
         DramaSeriesRecord series = findSeries(episode.seriesId());
         DramaSceneRecord scene = shot.sceneId() == null ? null : workflowRepository.findScene(shot.sceneId()).orElse(null);
         List<DramaCharacterRecord> characters = characterRepository.listBySeries(series.id());
-        return imageGenerationService.submit(
-                buildShotImageContext(series, episode, scene, shot, characters),
-                () -> buildShotImagePrompt(series, episode, scene, shot, characters, request == null ? "" : request.instruction())
-        );
+        return new ShotImagePreparation(series, episode, scene, shot, characters);
     }
 
     public List<DramaTaskVo> generateEpisodeSceneImages(Long episodeId) {
@@ -699,7 +1004,7 @@ public class DramaGenerationService {
         return tasks;
     }
 
-    public DramaTaskVo generateShotVideo(Long shotId, GenerateRequest request) {
+    public DramaTaskVo generateShotVideo(Long shotId, DramaVideoGenerateRequest request) {
         DramaShotRecord shot = workflowRepository.findShot(shotId)
                 .orElseThrow(() -> new BusinessException(404, "镜头不存在"));
         DramaEpisodeRecord episode = workflowRepository.findEpisode(shot.episodeId())
@@ -711,9 +1016,48 @@ public class DramaGenerationService {
         }
         DramaSeriesRecord series = findSeries(episode.seriesId());
         DramaSceneRecord scene = shot.sceneId() == null ? null : workflowRepository.findScene(shot.sceneId()).orElse(null);
-        return videoGenerationService.submit(series, episode, scene, shot);
+        String prompt = request == null ? "" : nullToEmpty(request.prompt()).trim();
+        if (!hasText(prompt)) {
+            throw new BusinessException(400, "请先确认视频生成提示词");
+        }
+        Integer requestedDurationSeconds = normalizeVideoDuration(request == null ? null : request.durationSeconds());
+        int lockedDurationSeconds = requestedDurationSeconds == null ? resolveVideoSeconds(shot) : requestedDurationSeconds;
+        workflowRepository.updateShotVideoPrompt(shot.id(), prompt, lockedDurationSeconds);
+        shot = workflowRepository.findShot(shotId).orElse(shot);
+        return videoGenerationService.submit(
+                series,
+                episode,
+                scene,
+                shot,
+                prompt,
+                request == null ? null : request.referenceAssetIds(),
+                lockedDurationSeconds,
+                request == null ? null : request.resolution(),
+                request == null ? null : request.fps(),
+                request == null ? null : request.ratio()
+        );
     }
 
+    private ShotVideoPreparation prepareShotVideo(Long shotId) {
+        return prepareShotVideoPrompt(shotId, true);
+    }
+
+    private ShotVideoPreparation prepareShotVideoPrompt(Long shotId, boolean rejectExistingOrGenerating) {
+        DramaShotRecord shot = workflowRepository.findShot(shotId)
+                .orElseThrow(() -> new BusinessException(404, "Shot not found"));
+        DramaEpisodeRecord episode = workflowRepository.findEpisode(shot.episodeId())
+                .orElseThrow(() -> new BusinessException(404, "Shot episode not found"));
+        ensureEpisodeStepReached(episode.status(), "IMAGE_READY", "Please finish image generation before video generation");
+        if (rejectExistingOrGenerating && (assetRepository.existsByShotAndAssetType(shotId, "SHOT_VIDEO")
+                || workflowRepository.existsNonFailedTaskByShotAndTaskType(shotId, "SHOT_VIDEO_GENERATE"))) {
+            throw new BusinessException(400, "Shot video already exists or is generating");
+        }
+        DramaSeriesRecord series = findSeries(episode.seriesId());
+        DramaSceneRecord scene = shot.sceneId() == null ? null : workflowRepository.findScene(shot.sceneId()).orElse(null);
+        DramaAssetRecord firstFrame = findShotFirstFrame(episode.id(), shot.id());
+        List<DramaCharacterRecord> characters = characterRepository.listBySeries(series.id());
+        return new ShotVideoPreparation(series, episode, scene, shot, firstFrame, characters);
+    }
     public List<DramaTaskVo> generateEpisodeShotVideos(Long episodeId) {
         DramaEpisodeRecord episode = workflowRepository.findEpisode(episodeId)
                 .orElseThrow(() -> new BusinessException(404, "分集不存在"));
@@ -854,6 +1198,8 @@ public class DramaGenerationService {
                     "scene-reference-" + scene.id(),
                     "image/jpeg",
                     productionImageSize(series),
+                    properties.getImage().getImageQuality(),
+                    properties.getImage().getImageOutputFormat(),
                     saveDirectory
             );
         } catch (IOException ex) {
@@ -891,6 +1237,8 @@ public class DramaGenerationService {
                     "shot-reference-" + shot.shotNo() + "-" + shot.id(),
                     "image/jpeg",
                     productionImageSize(series),
+                    properties.getImage().getImageQuality(),
+                    properties.getImage().getImageOutputFormat(),
                     saveDirectory
             );
         } catch (IOException ex) {
@@ -898,14 +1246,282 @@ public class DramaGenerationService {
         }
     }
 
-    private String buildSceneImagePrompt(
+    private DramaImageGenerationContext withImagePromptAndReferences(DramaImageGenerationContext context, String prompt, DramaImageGenerateRequest request) {
+        List<Long> requestReferenceAssetIds = request == null ? null : request.referenceAssetIds();
+        return new DramaImageGenerationContext(
+                context.seriesId(),
+                context.episodeId(),
+                context.sceneId(),
+                context.shotId(),
+                context.characterId(),
+                context.targetType(),
+                context.targetId(),
+                context.assetType(),
+                context.assetSubType(),
+                firstReferenceAssetId(context, requestReferenceAssetIds),
+                mergeReferenceAssetIds(context, requestReferenceAssetIds),
+                prompt,
+                context.seed(),
+                context.fileNamePrefix(),
+                context.contentType(),
+                normalizeImageSize(request == null ? null : request.imageSize(), context.imageSize()),
+                normalizeImageQuality(request == null ? null : request.imageQuality(), context.imageQuality()),
+                normalizeImageFormat(request == null ? null : request.imageFormat(), context.imageFormat()),
+                context.saveDirectory()
+        );
+    }
+
+    private Long firstReferenceAssetId(DramaImageGenerationContext context, List<Long> requestReferenceAssetIds) {
+        List<Long> ids = mergeReferenceAssetIds(context, requestReferenceAssetIds);
+        return ids.isEmpty() ? context.referenceAssetId() : ids.get(0);
+    }
+
+    private List<Long> mergeReferenceAssetIds(DramaImageGenerationContext context, List<Long> requestReferenceAssetIds) {
+        List<Long> merged = new ArrayList<>();
+        if (context.referenceAssetIds() != null) {
+            merged.addAll(context.referenceAssetIds());
+        } else if (context.referenceAssetId() != null) {
+            merged.add(context.referenceAssetId());
+        }
+        if (requestReferenceAssetIds != null) {
+            merged.addAll(requestReferenceAssetIds);
+        }
+        return merged.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .limit(16)
+                .toList();
+    }
+
+    private String normalizeImageSize(String requestedSize, String fallback) {
+        String value = nullToEmpty(requestedSize).trim();
+        if (value.matches("\\d{3,5}x\\d{3,5}")) {
+            return value;
+        }
+        return hasText(fallback) ? fallback : properties.getImage().getImageSize();
+    }
+
+    private String normalizeImageQuality(String requestedQuality, String fallback) {
+        String value = nullToEmpty(requestedQuality).trim().toLowerCase(Locale.ROOT);
+        if (List.of("low", "medium", "high", "auto").contains(value)) {
+            return value;
+        }
+        return hasText(fallback) ? fallback : properties.getImage().getImageQuality();
+    }
+
+    private String normalizeImageFormat(String requestedFormat, String fallback) {
+        String value = nullToEmpty(requestedFormat).trim().toLowerCase(Locale.ROOT);
+        if (List.of("jpeg", "png", "webp").contains(value)) {
+            return value;
+        }
+        return hasText(fallback) ? fallback : properties.getImage().getImageOutputFormat();
+    }
+
+    private com.qctv1.ai.drama.vo.DramaAssetVo toAssetVo(DramaAssetRecord record) {
+        return new com.qctv1.ai.drama.vo.DramaAssetVo(
+                record.id(),
+                record.episodeId(),
+                record.sceneId(),
+                record.shotId(),
+                record.assetType(),
+                record.assetSubType(),
+                record.characterId(),
+                record.fileName(),
+                record.contentType(),
+                record.accessUrl(),
+                record.prompt(),
+                record.status(),
+                record.createdAt()
+        );
+    }
+
+    private Map<String, Object> buildImageRequestParameters(DramaImageGenerationContext context) {
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("size", context.imageSize());
+        parameters.put("quality", context.imageQuality());
+        parameters.put("format", context.imageFormat());
+        return parameters;
+    }
+
+    private List<Long> referenceImageIds(DramaImageGenerationContext context) {
+        if (context.referenceAssetIds() != null && !context.referenceAssetIds().isEmpty()) {
+            return context.referenceAssetIds().stream().distinct().limit(16).toList();
+        }
+        return context.referenceAssetId() == null ? List.of() : List.of(context.referenceAssetId());
+    }
+
+    private List<com.qctv1.ai.drama.vo.DramaAssetVo> buildReferenceImageVos(DramaImageGenerationContext context) {
+        return referenceImageIds(context).stream()
+                .map(assetRepository::findById)
+                .flatMap(java.util.Optional::stream)
+                .map(this::toAssetVo)
+                .toList();
+    }
+
+    private Map<String, Object> buildVideoRequestParameters(DramaSeriesRecord series, DramaShotRecord shot, DramaAssetRecord firstFrame) {
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("durationSeconds", resolveVideoSeconds(shot));
+        parameters.put("resolution", "720p");
+        parameters.put("fps", 24);
+        parameters.put("ratio", "PORTRAIT_9_16".equalsIgnoreCase(nullToEmpty(series.aspectRatio())) ? "9:16" : "16:9");
+        return parameters;
+    }
+    private DramaAssetRecord findShotFirstFrame(Long episodeId, Long shotId) {
+        return assetRepository.listByEpisode(episodeId, 1000).stream()
+                .filter(asset -> shotId.equals(asset.shotId()))
+                .filter(asset -> "SHOT_IMAGE".equals(asset.assetType()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(400, "Please generate the shot first frame before video generation"));
+    }
+
+    private int resolveVideoSeconds(DramaShotRecord shot) {
+        Integer seconds = shot.durationSeconds();
+        if (seconds == null || seconds <= 0) {
+            return 10;
+        }
+        return Math.max(9, Math.min(seconds, 12));
+    }
+
+    private String formatSeconds(double value) {
+        return String.format(Locale.ROOT, "%.1f", Math.max(0, value));
+    }
+
+    private Integer normalizeVideoDuration(Integer durationSeconds) {
+        if (durationSeconds == null || durationSeconds <= 0) {
+            return null;
+        }
+        return Math.max(9, Math.min(durationSeconds, 12));
+    }
+
+    private DramaShotRecord withPreviewDuration(DramaShotRecord shot, Integer durationSeconds) {
+        Integer normalized = normalizeVideoDuration(durationSeconds);
+        if (normalized == null || normalized.equals(shot.durationSeconds())) {
+            return shot;
+        }
+        return new DramaShotRecord(
+                shot.id(),
+                shot.episodeId(),
+                shot.sceneId(),
+                shot.shotNo(),
+                shot.shotSize(),
+                normalized,
+                shot.cameraMovement(),
+                shot.composition(),
+                shot.transitionType(),
+                shot.continuityType(),
+                shot.startState(),
+                shot.endState(),
+                shot.continuityNote(),
+                shot.soundEffect(),
+                shot.musicCue(),
+                shot.voiceOver(),
+                shot.action(),
+                shot.dialogue(),
+                shot.imagePrompt(),
+                shot.videoPrompt(),
+                shot.status(),
+                shot.createdAt(),
+                shot.updatedAt()
+        );
+    }
+
+    private DramaAssetRecord resolvePreviewReferenceFrame(Long seriesId, DramaAssetRecord fallback, List<Long> referenceAssetIds) {
+        if (referenceAssetIds == null || referenceAssetIds.isEmpty()) {
+            return fallback;
+        }
+        return referenceAssetIds.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .map(assetRepository::findById)
+                .flatMap(java.util.Optional::stream)
+                .filter(asset -> seriesId.equals(asset.seriesId()))
+                .filter(this::isUsableVideoReferenceImage)
+                .findFirst()
+                .orElse(fallback);
+    }
+
+    private boolean isUsableVideoReferenceImage(DramaAssetRecord asset) {
+        String contentType = nullToEmpty(asset.contentType()).toLowerCase(Locale.ROOT);
+        String assetType = nullToEmpty(asset.assetType()).toUpperCase(Locale.ROOT);
+        return contentType.startsWith("image/") || assetType.contains("IMAGE");
+    }
+
+    private String formatCharactersForPreviewPrompt(List<DramaCharacterRecord> characters) {
+        if (characters == null || characters.isEmpty()) {
+            return "无明确角色资料，以 @图片1 中实际人物为准";
+        }
+        return characters.stream()
+                .map(character -> nullToDefault(character.name(), "未命名角色")
+                        + "：外貌=" + nullToDefault(character.appearance(), "参考 @图片1")
+                        + "；服装=" + nullToDefault(character.costume(), "参考 @图片1")
+                        + "；性格/状态=" + nullToDefault(character.personality(), "符合当前剧情")
+                        + "；关系=" + nullToDefault(character.relationship(), "未设置"))
+                .toList()
+                .toString();
+    }
+
+    private String buildSceneImageChinesePrompt(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            List<DramaCharacterRecord> characters
+    ) {
+        String instruction = """
+                你是专业短剧美术指导、分镜导演和 AI 图片提示词工程师。
+                请基于下面生产资料，生成一段可直接给用户编辑的中文场景参考图提示词。
+                要求：
+                - 只输出最终中文提示词，不要 Markdown，不要解释，不要 JSON。
+                - 画面描述必须具体，包含地点空间、时代质感、灯光、时间、氛围、构图、镜头语言和风格约束。
+                - 用于统一后续镜头首帧和视频片段环境风格，重点呈现场景，不要生成主角肖像、人物特写或英雄式人物镜头。
+                - 如果必须出现人物，只能是很小、很远、匿名的背景剪影或群众。
+                - 提示词中可以使用 @图片1、@图片2 这类参考图标记，但不要编造不存在的参考图。
+
+                生产资料：
+                %s
+                """.formatted(buildSceneImageProductionBrief(series, episode, scene, characters, ""));
+        return generateEditableChineseImagePrompt(instruction);
+    }
+
+    private String buildShotImageChinesePrompt(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            DramaShotRecord shot,
+            List<DramaCharacterRecord> characters
+    ) {
+        String instruction = """
+                你是专业短剧分镜导演、美术指导和 AI 图片提示词工程师。
+                请基于下面生产资料，生成一段可直接给用户编辑的中文镜头首帧图提示词。
+                要求：
+                - 只输出最终中文提示词，不要 Markdown，不要解释，不要 JSON。
+                - 画面描述必须非常具体，包含景别、人物动作、人物表情、情绪、地点、灯光、构图、镜头语言、服装和画面强制要求。
+                - 这张图会作为后续图生视频第一帧，必须清楚表达当前镜头要发生什么。
+                - 如果使用角色参考图，请严格保持角色脸型、年龄感、性别、身形、发型、服装和气质一致，不要创造与镜头无关的新角色。
+                - 提示词中可以使用 @图片1、@图片2 这类参考图标记，但不要编造不存在的参考图。
+
+                生产资料：
+                %s
+                """.formatted(buildShotImageProductionBrief(series, episode, scene, shot, characters, ""));
+        return generateEditableChineseImagePrompt(instruction);
+    }
+
+    private String generateEditableChineseImagePrompt(String instruction) {
+        String generated = textGenerationClient.generate(instruction);
+        String prompt = normalizeVideoPreviewPrompt(generated);
+        if (isModelFallback(prompt) || !hasText(prompt)) {
+            throw new BusinessException(500, "图片提示词生成失败，文本模型返回不可用：" + limitText(generated, 500));
+        }
+        return prompt;
+    }
+
+    private String buildSceneImageProductionBrief(
             DramaSeriesRecord series,
             DramaEpisodeRecord episode,
             DramaSceneRecord scene,
             List<DramaCharacterRecord> characters,
             String instruction
     ) {
-        String productionBrief = """
+        return """
                 场景参考图生产资料：
                 - 目标：生成短剧分集里的场景参考图，用于统一后续镜头首帧和视频片段的环境风格。
                 - 项目设定：
@@ -932,6 +1548,16 @@ public class DramaGenerationService {
                 formatCharactersForPrompt(characters),
                 nullToDefault(instruction, "暂无")
         );
+    }
+
+    private String buildSceneImagePrompt(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            List<DramaCharacterRecord> characters,
+            String instruction
+    ) {
+        String productionBrief = buildSceneImageProductionBrief(series, episode, scene, characters, instruction);
         return buildEnglishVisualPromptByTextModel(productionBrief, """
                 Generate one cinematic environment reference image for a short drama scene.
                 Focus on location, time of day, atmosphere, production design, lighting and usable spatial layout.
@@ -942,7 +1568,7 @@ public class DramaGenerationService {
                 """.formatted(productionCompositionRequirement(series)));
     }
 
-    private String buildShotImagePrompt(
+    private String buildShotImageProductionBrief(
             DramaSeriesRecord series,
             DramaEpisodeRecord episode,
             DramaSceneRecord scene,
@@ -950,7 +1576,7 @@ public class DramaGenerationService {
             List<DramaCharacterRecord> characters,
             String instruction
     ) {
-        String productionBrief = """
+        return """
                 镜头首帧图生产资料：
                 - 项目生产设定：
                 %s
@@ -992,6 +1618,17 @@ public class DramaGenerationService {
                 formatCharactersForPrompt(characters),
                 nullToDefault(instruction, "暂无")
         );
+    }
+
+    private String buildShotImagePrompt(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            DramaShotRecord shot,
+            List<DramaCharacterRecord> characters,
+            String instruction
+    ) {
+        String productionBrief = buildShotImageProductionBrief(series, episode, scene, shot, characters, instruction);
         return buildEnglishVisualPromptByTextModel(productionBrief, """
                 Generate one cinematic shot reference image / first-frame image for a short drama video shot.
                 The image must clearly express the shot size, character action, emotion, location, lighting and composition.
@@ -1149,7 +1786,7 @@ public class DramaGenerationService {
                 - sceneIndex 必须对应已有场景序号。
                 - imagePrompt 必须结合项目类型、题材、风格、角色资料、场景地点和当前镜头动作，不要生成通用模板提示词。
                 - videoPrompt 必须结合项目单集时长控制单镜头节奏，写清动作、运镜、时长感和情绪变化。
-                - durationSeconds 必须是 2 到 12 秒之间的整数，常规镜头建议 4 到 7 秒。
+                - durationSeconds 必须是 9 到 12 秒之间的整数，常规镜头建议 10 到 11 秒；不要再拆成 5 秒左右的短镜头。
                 - cameraMovement 必须写清固定镜头、缓慢推进、横移、跟拍、拉远、摇镜等具体运镜。
                 - composition 必须写清主体位置、前景、背景、人物关系和画面重心。
                 - transitionType、soundEffect、musicCue、voiceOver 用于后续视频剪辑和声音设计，不要留空；没有旁白时 voiceOver 写“无”。
@@ -1161,7 +1798,7 @@ public class DramaGenerationService {
                 [SHOT]
                 sceneIndex: 1
                 shotSize: 景别
-                durationSeconds: 5
+                durationSeconds: 10
                 cameraMovement: 运镜方式
                 composition: 画面构图
                 transitionType: 转场方式
@@ -1369,7 +2006,7 @@ public class DramaGenerationService {
 
     private String buildShotCountGuidance(Integer durationMinutes) {
         int[] range = shotCountRange(durationMinutes);
-        return "单集约 " + safeDuration(durationMinutes) + " 分钟，建议拆 " + range[0] + " 到 " + range[1] + " 个镜头；单镜头通常 4 到 7 秒，优先控制镜头数量和镜头目的。";
+        return "单集约 " + safeDuration(durationMinutes) + " 分钟，建议拆 " + range[0] + " 到 " + range[1] + " 个镜头；单镜头必须 9 到 12 秒，常规建议 10 到 11 秒，优先控制镜头数量和镜头目的。";
     }
 
     private int[] sceneCountRange(Integer durationMinutes) {
@@ -1381,8 +2018,8 @@ public class DramaGenerationService {
 
     private int[] shotCountRange(Integer durationMinutes) {
         int duration = safeDuration(durationMinutes);
-        int min = Math.max(6, duration * 8);
-        int max = Math.max(min, duration * 12);
+        int min = Math.max(4, duration * 5);
+        int max = Math.max(min, duration * 7);
         return new int[]{min, max};
     }
 
@@ -1406,9 +2043,9 @@ public class DramaGenerationService {
 
     private Integer normalizeShotDuration(Integer durationSeconds) {
         if (durationSeconds == null) {
-            return 5;
+            return 10;
         }
-        return Math.max(2, Math.min(durationSeconds, 12));
+        return Math.max(9, Math.min(durationSeconds, 12));
     }
 
     private String normalizeContinuityType(String value) {
@@ -1964,6 +2601,8 @@ public class DramaGenerationService {
                         外貌：%s
                         服装：%s
                         性格：%s
+                        音色来源类型：%s
+                        音色来源值：%s
                         关系：%s
                         """.formatted(
                         character.name(),
@@ -1971,6 +2610,8 @@ public class DramaGenerationService {
                         nullToDefault(character.appearance(), "暂无"),
                         nullToDefault(character.costume(), "暂无"),
                         nullToDefault(character.personality(), "暂无"),
+                        nullToDefault(character.voiceProfileType(), "PROMPT"),
+                        nullToDefault(character.voiceProfile(), "暂无"),
                         nullToDefault(character.relationship(), "暂无")
                 ).trim())
                 .reduce((left, right) -> left + "\n\n" + right)
@@ -2153,6 +2794,33 @@ public class DramaGenerationService {
         };
     }
 
+    private String firstText(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (hasText(value)) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private String latestAssetPrompt(Long episodeId, Long sceneId, Long shotId, String assetType) {
+        if (episodeId == null) {
+            return "";
+        }
+        return assetRepository.listByEpisode(episodeId, 1000).stream()
+                .filter(asset -> assetType.equals(asset.assetType()))
+                .filter(asset -> sceneId == null || sceneId.equals(asset.sceneId()))
+                .filter(asset -> shotId == null || shotId.equals(asset.shotId()))
+                .map(DramaAssetRecord::prompt)
+                .filter(this::hasText)
+                .findFirst()
+                .map(String::trim)
+                .orElse("");
+    }
+
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
@@ -2189,6 +2857,13 @@ public class DramaGenerationService {
         return "Vertical short-drama frame, 9:16 portrait composition, 1024x1792 aspect ratio, suitable for Douyin full-screen mobile viewing.";
     }
 
+    private String productionCompositionRequirementZh(DramaSeriesRecord series) {
+        if (isLandscape(series)) {
+            return "横屏漫画/短剧画幅，16:9 横构图，1792x1024，适合漫画分镜叙事和后续视频推拉摇移剪辑。";
+        }
+        return "竖屏短剧画幅，9:16 竖构图，1024x1792，适合抖音全屏移动端观看。";
+    }
+
     private boolean isLandscape(DramaSeriesRecord series) {
         return series != null && "LANDSCAPE_16_9".equalsIgnoreCase(nullToEmpty(series.aspectRatio()));
     }
@@ -2215,6 +2890,33 @@ public class DramaGenerationService {
                 ? series.totalEpisodes()
                 : request.count();
         return Math.max(1, Math.min(configuredCount, 100));
+    }
+
+    private record SceneImagePreparation(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            List<DramaCharacterRecord> characters
+    ) {
+    }
+
+    private record ShotImagePreparation(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            DramaShotRecord shot,
+            List<DramaCharacterRecord> characters
+    ) {
+    }
+
+    private record ShotVideoPreparation(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            DramaShotRecord shot,
+            DramaAssetRecord firstFrame,
+            List<DramaCharacterRecord> characters
+    ) {
     }
 
     private record StoryContent(String originalStory, String storySummary, String fullStory) {

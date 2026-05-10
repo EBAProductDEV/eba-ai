@@ -87,6 +87,33 @@ public class DramaSeriesRepository {
         return Optional.ofNullable(entity).map(this::toRecord);
     }
 
+    public void updateBasic(
+            Long id,
+            Long userId,
+            String name,
+            String aspectRatio,
+            String type,
+            String intro,
+            String theme,
+            String style,
+            Integer totalEpisodes,
+            Integer episodeDurationMinutes
+    ) {
+        seriesMapper.update(new LambdaUpdateWrapper<DramaSeriesEntity>()
+                .set(DramaSeriesEntity::getName, name)
+                .set(DramaSeriesEntity::getAspectRatio, normalizeAspectRatio(aspectRatio))
+                .set(DramaSeriesEntity::getType, type)
+                .set(DramaSeriesEntity::getIntro, intro)
+                .set(DramaSeriesEntity::getTheme, theme)
+                .set(DramaSeriesEntity::getStyle, style)
+                .set(DramaSeriesEntity::getTotalEpisodes, totalEpisodes)
+                .set(DramaSeriesEntity::getEpisodeDurationMinutes, episodeDurationMinutes)
+                .set(DramaSeriesEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaSeriesEntity::getId, id)
+                .eq(DramaSeriesEntity::getUserId, userId)
+                .eq(DramaSeriesEntity::getDeleted, false));
+    }
+
     public void updateStory(Long id, String originalStory, String storySummary, String fullStory, String storyStatus) {
         String projectStatus = "READY".equals(storyStatus) ? "STORY_READY" : "DRAFT";
         seriesMapper.update(new LambdaUpdateWrapper<DramaSeriesEntity>()

@@ -10,6 +10,8 @@ public record DramaCharacterVo(
         String appearance,
         String costume,
         String personality,
+        String voiceProfileType,
+        String voiceProfile,
         String relationship,
         String visualProfile,
         Long primaryReferenceAssetId,

@@ -97,16 +97,16 @@ public class OpenAiCompatibleProviderClients implements TextGenerationClient, Im
 
     @Override
     public ImageResult generateImage(String prompt) {
-        return generateImage(prompt, null);
+        return generateImage(prompt, null, null, null);
     }
 
     @Override
-    public ImageResult generateImage(String prompt, String imageSize) {
+    public ImageResult generateImage(String prompt, String imageSize, String imageQuality, String imageFormat) {
         if (!properties.getImage().isReady()) {
             return null;
         }
         String url = resolveImagesUrl(properties.getImage().getBaseUrl(), properties.getImage().getImagesPath());
-        String requestBody = buildImageGenerationRequestBody(prompt, imageSize);
+        String requestBody = buildImageGenerationRequestBody(prompt, imageSize, imageQuality, imageFormat);
         byte[] bodyBytes = requestBody.getBytes(StandardCharsets.UTF_8);
         try {
             // 图片供应商对请求格式比较敏感，这里使用 Java HttpClient，并让请求体与已验证通过的独立 Java 探针保持一致。
@@ -141,16 +141,16 @@ public class OpenAiCompatibleProviderClients implements TextGenerationClient, Im
     }
     @Override
     public ImageResult editImage(String prompt, List<Path> referenceImages) {
-        return editImage(prompt, referenceImages, null);
+        return editImage(prompt, referenceImages, null, null, null);
     }
 
     @Override
-    public ImageResult editImage(String prompt, List<Path> referenceImages, String imageSize) {
+    public ImageResult editImage(String prompt, List<Path> referenceImages, String imageSize, String imageQuality, String imageFormat) {
         if (!properties.getImage().isReady()) {
             return null;
         }
         if (referenceImages == null || referenceImages.isEmpty()) {
-            return generateImage(prompt);
+            return generateImage(prompt, imageSize, imageQuality, imageFormat);
         }
         try {
             MultipartBodyBuilder builder = new MultipartBodyBuilder();
@@ -161,8 +161,8 @@ public class OpenAiCompatibleProviderClients implements TextGenerationClient, Im
             builder.part("prompt", prompt);
             builder.part("n", "1");
             builder.part("size", imageSize(imageSize));
-            builder.part("quality", imageQuality());
-            builder.part("output_format", imageOutputFormat());
+            builder.part("quality", imageQuality(imageQuality));
+            builder.part("output_format", imageOutputFormat(imageFormat));
             builder.part("output_compression", String.valueOf(imageOutputCompression()));
             builder.part("background", "auto");
             builder.part("moderation", "auto");
@@ -196,10 +196,13 @@ public class OpenAiCompatibleProviderClients implements TextGenerationClient, Im
             builder.part("model", properties.getVideo().getModel());
             builder.part("prompt", request.prompt());
             builder.part("input_reference", buildVideoReferenceDataUri(request.referenceImage(), request.ratio()));
-            builder.part("duration", String.valueOf(resolveVideoSeconds(request.seconds())));
-            builder.part("width", String.valueOf(resolveVideoWidth(request.ratio())));
-            builder.part("height", String.valueOf(resolveVideoHeight(request.ratio())));
-            builder.part("fps", "24");
+            int videoSeconds = resolveVideoSeconds(request.seconds());
+            builder.part("duration", String.valueOf(videoSeconds));
+            builder.part("seconds", String.valueOf(videoSeconds));
+            builder.part("duration_seconds", String.valueOf(videoSeconds));
+            builder.part("width", String.valueOf(resolveVideoWidth(request.ratio(), request.resolution())));
+            builder.part("height", String.valueOf(resolveVideoHeight(request.ratio(), request.resolution())));
+            builder.part("fps", String.valueOf(resolveVideoFps(request.fps())));
             builder.part("n", "1");
             builder.part("response_format", "url");
             Map<?, ?> response = webClient.post()
@@ -337,8 +340,8 @@ public class OpenAiCompatibleProviderClients implements TextGenerationClient, Im
         if (source == null) {
             throw new IOException("视频首帧图不是可识别图片：" + referenceImage);
         }
-        int canvasWidth = resolveVideoWidth(ratio);
-        int canvasHeight = resolveVideoHeight(ratio);
+        int canvasWidth = resolveVideoWidth(ratio, "720p");
+        int canvasHeight = resolveVideoHeight(ratio, "720p");
         BufferedImage canvas = new BufferedImage(canvasWidth, canvasHeight, BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = canvas.createGraphics();
         try {
@@ -458,17 +461,36 @@ public class OpenAiCompatibleProviderClients implements TextGenerationClient, Im
 
     private int resolveVideoSeconds(Integer seconds) {
         if (seconds == null || seconds <= 0) {
-            return 5;
+            return 10;
         }
-        return Math.max(4, Math.min(seconds, 12));
+        return Math.max(9, Math.min(seconds, 12));
     }
 
-    private int resolveVideoWidth(String ratio) {
-        return "9:16".equals(ratio) ? 720 : 1280;
+    private int resolveVideoWidth(String ratio, String resolution) {
+        int shortSide = resolveVideoShortSide(resolution);
+        return "9:16".equals(ratio) ? shortSide : Math.round(shortSide * 16f / 9f);
     }
 
-    private int resolveVideoHeight(String ratio) {
-        return "9:16".equals(ratio) ? 1280 : 720;
+    private int resolveVideoHeight(String ratio, String resolution) {
+        int shortSide = resolveVideoShortSide(resolution);
+        return "9:16".equals(ratio) ? Math.round(shortSide * 16f / 9f) : shortSide;
+    }
+
+    private int resolveVideoShortSide(String resolution) {
+        if ("1080p".equalsIgnoreCase(resolution)) {
+            return 1080;
+        }
+        if ("480p".equalsIgnoreCase(resolution)) {
+            return 480;
+        }
+        return 720;
+    }
+
+    private int resolveVideoFps(Integer fps) {
+        if (fps == null || fps <= 0) {
+            return 24;
+        }
+        return Math.max(12, Math.min(fps, 30));
     }
 
     private ImageResult extractImageResult(Map<?, ?> response) {
@@ -607,14 +629,14 @@ public class OpenAiCompatibleProviderClients implements TextGenerationClient, Im
         return extractImageResult(parseImageResponse(toUtf8(bytes), apiName));
     }
 
-    private String buildImageGenerationRequestBody(String prompt, String requestedImageSize) {
+    private String buildImageGenerationRequestBody(String prompt, String requestedImageSize, String requestedQuality, String requestedFormat) {
         return "{"
                 + "\"model\":\"" + escapeJson(properties.getImage().getModel()) + "\","
                 + "\"prompt\":\"" + escapeJson(prompt) + "\","
                 + "\"n\":1,"
                 + "\"size\":\"" + escapeJson(imageSize(requestedImageSize)) + "\","
-                + "\"quality\":\"" + escapeJson(imageQuality()) + "\","
-                + "\"output_format\":\"" + escapeJson(imageOutputFormat()) + "\","
+                + "\"quality\":\"" + escapeJson(imageQuality(requestedQuality)) + "\","
+                + "\"output_format\":\"" + escapeJson(imageOutputFormat(requestedFormat)) + "\","
                 + "\"output_compression\":" + imageOutputCompression() + ","
                 + "\"background\":\"auto\","
                 + "\"moderation\":\"auto\","
@@ -664,11 +686,25 @@ public class OpenAiCompatibleProviderClients implements TextGenerationClient, Im
     }
 
     private String imageQuality() {
+        return imageQuality(null);
+    }
+
+    private String imageQuality(String requestedQuality) {
+        if (requestedQuality != null && !requestedQuality.isBlank()) {
+            return requestedQuality;
+        }
         String value = properties.getImage().getImageQuality();
         return value == null || value.isBlank() ? "low" : value;
     }
 
     private String imageOutputFormat() {
+        return imageOutputFormat(null);
+    }
+
+    private String imageOutputFormat(String requestedFormat) {
+        if (requestedFormat != null && !requestedFormat.isBlank()) {
+            return requestedFormat.toLowerCase();
+        }
         String value = properties.getImage().getImageOutputFormat();
         return value == null || value.isBlank() ? "jpeg" : value.toLowerCase();
     }

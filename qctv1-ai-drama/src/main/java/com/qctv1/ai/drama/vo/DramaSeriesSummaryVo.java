@@ -8,6 +8,7 @@ public record DramaSeriesSummaryVo(
         String aspectRatio,
         String type,
         String intro,
+        String theme,
         String style,
         Integer totalEpisodes,
         Integer episodeDurationMinutes,

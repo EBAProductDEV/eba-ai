@@ -62,8 +62,23 @@ public class DramaVideoGenerationService {
     }
 
     public DramaTaskVo submit(DramaSeriesRecord series, DramaEpisodeRecord episode, DramaSceneRecord scene, DramaShotRecord shot) {
-        DramaAssetRecord firstFrame = findShotFirstFrame(episode.id(), shot.id())
-                .orElseThrow(() -> new BusinessException(400, "请先生成该镜头的首帧图，再生成视频"));
+        return submit(series, episode, scene, shot, null, null, null, null, null, null);
+    }
+
+    public DramaTaskVo submit(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            DramaShotRecord shot,
+            String promptOverride,
+            List<Long> referenceAssetIds,
+            Integer durationSeconds,
+            String resolution,
+            Integer fps,
+            String ratio
+    ) {
+        DramaAssetRecord firstFrame = resolveVideoReferenceFrame(series.id(), episode.id(), shot.id(), referenceAssetIds)
+                .orElseThrow(() -> new BusinessException(400, "Please generate the shot first frame before video generation"));
         Long taskId = workflowRepository.createTask(
                 series.id(),
                 episode.id(),
@@ -79,18 +94,29 @@ public class DramaVideoGenerationService {
                 "PENDING",
                 0,
                 "PROMPTING",
-                "视频任务已提交，正在组装英文视频提示词"
+                "Video task submitted, assembling prompt"
         );
-        videoTaskExecutor.execute(() -> runVideoTask(taskId, series, episode, scene, shot, firstFrame));
+        videoTaskExecutor.execute(() -> runVideoTask(taskId, series, episode, scene, shot, firstFrame, promptOverride, durationSeconds, resolution, fps, ratio));
         return toTaskVo(workflowRepository.findTask(taskId).stream()
                 .findFirst()
-                .orElseThrow(() -> new BusinessException(404, "任务不存在")));
+                .orElseThrow(() -> new BusinessException(404, "Task not found")));
     }
-
-    private void runVideoTask(Long taskId, DramaSeriesRecord series, DramaEpisodeRecord episode, DramaSceneRecord scene, DramaShotRecord shot, DramaAssetRecord firstFrame) {
+    private void runVideoTask(Long taskId, DramaSeriesRecord series, DramaEpisodeRecord episode, DramaSceneRecord scene, DramaShotRecord shot, DramaAssetRecord firstFrame, String promptOverride, Integer durationSeconds, String resolution, Integer fps, String ratio) {
         try {
             workflowRepository.updateTaskProgress(taskId, "RUNNING", 8, "PROMPTING", "视频提示词组装中");
-            String prompt = buildVideoPrompt(series, episode, scene, shot);
+            int videoSeconds = resolveVideoSeconds(durationSeconds == null ? shot.durationSeconds() : durationSeconds);
+            String videoRatio = resolveVideoRatio(series, ratio);
+            String videoResolution = resolveVideoResolution(resolution);
+            int videoFps = resolveVideoFps(fps);
+            String savedPrompt = nullToEmpty(promptOverride).trim();
+            String providerPrompt;
+            if (savedPrompt.isBlank()) {
+                providerPrompt = buildVideoPrompt(series, episode, scene, shot, videoSeconds, videoRatio, videoResolution);
+                savedPrompt = providerPrompt;
+            } else {
+                providerPrompt = translateSubmittedVideoPrompt(series, episode, scene, shot, savedPrompt, videoSeconds, videoRatio, videoResolution);
+            }
+            providerPrompt = enforceVideoSpec(providerPrompt, videoSeconds, videoRatio, videoResolution);
             Path referenceImage = Path.of(firstFrame.localPath()).toAbsolutePath().normalize();
             assetService.ensureInsideAssetRootForWrite(referenceImage);
             if (!Files.exists(referenceImage) || !Files.isRegularFile(referenceImage)) {
@@ -99,11 +125,12 @@ public class DramaVideoGenerationService {
 
             workflowRepository.updateTaskProgress(taskId, "RUNNING", 18, "SUBMITTING", "正在提交视频生成任务");
             VideoGenerationClient.VideoTask providerTask = videoGenerationClient.submitVideoTask(new VideoGenerationClient.VideoRequest(
-                    prompt,
+                    providerPrompt,
                     referenceImage,
-                    resolveVideoSeconds(shot),
-                    resolveVideoRatio(series),
-                    "720p"
+                    videoSeconds,
+                    videoRatio,
+                    videoResolution,
+                    videoFps
             ));
             workflowRepository.updateTaskProviderTaskId(taskId, providerTask.providerTaskId());
             workflowRepository.updateTaskProgress(taskId, "RUNNING", 30, "GENERATING", "AI 视频生成中");
@@ -132,7 +159,7 @@ public class DramaVideoGenerationService {
                     fileName,
                     normalizeVideoContentType(videoFile.contentType()),
                     videoPath.toString(),
-                    prompt,
+                    savedPrompt,
                     providerTask.providerTaskId(),
                     "READY"
             );
@@ -170,7 +197,11 @@ public class DramaVideoGenerationService {
                 : new BusinessException(500, "视频生成超时，最后一次查询错误：" + summarizeError(lastQueryError));
     }
 
-    private String buildVideoPrompt(DramaSeriesRecord series, DramaEpisodeRecord episode, DramaSceneRecord scene, DramaShotRecord shot) {
+    public String buildVideoPrompt(DramaSeriesRecord series, DramaEpisodeRecord episode, DramaSceneRecord scene, DramaShotRecord shot) {
+        return buildVideoPrompt(series, episode, scene, shot, resolveVideoSeconds(shot), resolveVideoRatio(series), "720p");
+    }
+
+    private String buildVideoPrompt(DramaSeriesRecord series, DramaEpisodeRecord episode, DramaSceneRecord scene, DramaShotRecord shot, int videoSeconds, String videoRatio, String videoResolution) {
         if (!properties.getText().isReady()) {
             throw new BusinessException(400, "视频提示词生成失败：文本模型未配置");
         }
@@ -202,7 +233,7 @@ public class DramaVideoGenerationService {
                 nullToDefault(series.type(), "短剧/漫剧"),
                 nullToDefault(series.theme(), "未设置"),
                 nullToDefault(series.style(), "未设置"),
-                resolveVideoRatio(series),
+                videoRatio,
                 episode.episodeNo(),
                 nullToDefault(episode.title(), "未命名"),
                 nullToDefault(episode.summary(), "暂无"),
@@ -212,7 +243,7 @@ public class DramaVideoGenerationService {
                 scene == null ? "暂无" : nullToDefault(scene.atmosphere(), "暂无"),
                 shot.shotNo(),
                 nullToDefault(shot.shotSize(), "未设置"),
-                resolveVideoSeconds(shot),
+                videoSeconds,
                 nullToDefault(shot.cameraMovement(), "自然轻微镜头运动"),
                 nullToDefault(shot.composition(), "保持首帧构图"),
                 nullToDefault(shot.action(), "暂无"),
@@ -231,19 +262,106 @@ public class DramaVideoGenerationService {
                 Mandatory rules:
                 1. Start with: "Use the input reference image as the exact first frame".
                 2. Strongly preserve character identity from the first frame and role cards: face, age, gender, hairstyle, outfit, body type, temperament, color palette.
-                3. Dialogue is handled later by TTS. The video must perform emotion and action only. Do not ask for accurate lip sync, do not generate speaking mouth close-ups, and avoid exaggerated mouth movement.
+                3. Generate natural spoken dialogue or voiceover when dialogue exists. Use one distinctive, consistent adult voice, keep lip movement synchronized with the spoken words, and keep the acting emotionally restrained.
                 4. Absolutely forbid duplicated bodies, duplicated heads, extra limbs, fused limbs, malformed hands, distorted faces, cloned characters, random extra people, or character redesign.
                 5. Keep motion smooth and physically plausible. Prefer subtle acting, fabric movement, hair movement, mist, light, camera movement, and body reaction.
                 6. Include camera movement, action rhythm, mood, environment motion, shot start state, shot end state, and continuity with adjacent shots.
                 7. Include negative requirements: no subtitles, no text, no logo, no watermark.
-                8. End with exactly these model parameters: -ratio=%s -resolution=720p -seconds=%s -generate_audio=false -camera_fixed=false
+                8. Audio rules: no background music, no sound effects, no ambient sound bed, no subtitles. Spoken dialogue/voiceover only.
+                9. The total video duration must be exactly %s seconds. If the production brief contains old 5-second timing, short 0-5 second ranges, or any conflicting duration, rewrite the timing to fill exactly %s seconds.
+                10. End with exactly these model parameters: -ratio=%s -resolution=%s -seconds=%s -generate_audio=true -camera_fixed=false
 
                 Production brief:
                 %s
-                """.formatted(resolveVideoRatio(series), resolveVideoSeconds(shot), productionBrief);
+                """.formatted(videoSeconds, videoSeconds, videoRatio, videoResolution, videoSeconds, productionBrief);
         String prompt = textGenerationClient.generate(instruction).trim();
         if (!isUsableEnglishVideoPrompt(prompt)) {
             throw new BusinessException(500, "视频英文提示词生成失败，文本模型返回不可用：" + limitText(prompt, 500));
+        }
+        return prompt;
+    }
+
+    private String enforceVideoSpec(String prompt, int videoSeconds, String videoRatio, String videoResolution) {
+        String normalized = nullToEmpty(prompt).trim();
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        int parameterStart = lower.lastIndexOf("-ratio=");
+        if (parameterStart >= 0 && lower.substring(parameterStart).contains("-seconds=")) {
+            normalized = normalized.substring(0, parameterStart).trim();
+        }
+        return """
+                %s
+
+                Hard duration lock: the generated video must be exactly %s seconds long. Ignore or rewrite any conflicting timing ranges in the prompt so the motion fills exactly %s seconds.
+                -ratio=%s -resolution=%s -seconds=%s -generate_audio=true -camera_fixed=false
+                """.formatted(normalized, videoSeconds, videoSeconds, videoRatio, videoResolution, videoSeconds).trim();
+    }
+
+    private String translateSubmittedVideoPrompt(
+            DramaSeriesRecord series,
+            DramaEpisodeRecord episode,
+            DramaSceneRecord scene,
+            DramaShotRecord shot,
+            String submittedPrompt,
+            int videoSeconds,
+            String videoRatio,
+            String videoResolution
+    ) {
+        if (!properties.getText().isReady()) {
+            throw new BusinessException(400, "视频提示词提交失败：文本模型未配置，无法在提交视频模型前翻译提示词");
+        }
+        String instruction = """
+                OUTPUT LANGUAGE POLICY:
+                Return ASCII English only. Do not output Chinese, Markdown, explanations, labels, or code fences.
+
+                You are a professional short-drama director, animation director, and AI video prompt engineer.
+                Translate and normalize the following user-edited Chinese video prompt into one concise but detailed English image-to-video prompt for the video model.
+                Keep every user requirement, especially voice timbre, speech, lip-sync, no background music, and no sound effects.
+                The video model will receive a first-frame reference image through input_reference. The prompt must extend that exact first frame, not redesign it.
+
+                Mandatory rules:
+                1. Start with: "Use the input reference image as the exact first frame".
+                2. Preserve character identity, face, hairstyle, outfit, body type, lighting, color palette, and composition from the input reference image.
+                3. Generate spoken dialogue or voiceover only when the prompt asks for it or dialogue exists in the shot data.
+                4. Keep lip movement synchronized with the spoken words and avoid exaggerated mouth movement.
+                5. No background music, no sound effects, no ambient sound bed, no subtitles, no text, no logo, no watermark.
+                6. Avoid duplicated bodies, duplicated heads, extra limbs, fused limbs, malformed hands, distorted faces, cloned characters, random extra people, or character redesign.
+                7. The total video duration must be exactly %s seconds. If the user-edited prompt contains old 5-second timing, short 0-5 second ranges, or any conflicting duration, rewrite the timing to fill exactly %s seconds instead of preserving the old timing.
+                8. End with exactly these model parameters: -ratio=%s -resolution=%s -seconds=%s -generate_audio=true -camera_fixed=false
+
+                Shot context:
+                - Project: %s
+                - Episode: %s %s
+                - Scene: %s
+                - Shot number: %s
+                - Shot size: %s
+                - Camera movement: %s
+                - Composition: %s
+                - Action: %s
+                - Dialogue or voiceover: %s
+
+                User-edited prompt:
+                %s
+                """.formatted(
+                videoSeconds,
+                videoSeconds,
+                videoRatio,
+                videoResolution,
+                videoSeconds,
+                nullToDefault(series.name(), "Untitled project"),
+                episode.episodeNo(),
+                nullToDefault(episode.title(), ""),
+                scene == null ? "None" : nullToDefault(scene.name(), "Unnamed scene"),
+                shot.shotNo(),
+                nullToDefault(shot.shotSize(), "medium shot"),
+                nullToDefault(shot.cameraMovement(), "subtle natural camera movement"),
+                nullToDefault(shot.composition(), "preserve the first-frame composition"),
+                nullToDefault(shot.action(), "subtle emotional acting"),
+                nullToDefault(shot.dialogue(), nullToDefault(shot.voiceOver(), "none")),
+                submittedPrompt
+        );
+        String prompt = textGenerationClient.generate(instruction).trim();
+        if (!isUsableEnglishVideoPrompt(prompt)) {
+            throw new BusinessException(500, "视频英文提示词翻译失败，文本模型返回不可用：" + limitText(prompt, 500));
         }
         return prompt;
     }
@@ -264,6 +382,31 @@ public class DramaVideoGenerationService {
                 .findFirst();
     }
 
+    private Optional<DramaAssetRecord> resolveVideoReferenceFrame(Long seriesId, Long episodeId, Long shotId, List<Long> referenceAssetIds) {
+        return findRequestedReferenceImage(seriesId, referenceAssetIds)
+                .or(() -> findShotFirstFrame(episodeId, shotId));
+    }
+
+    private Optional<DramaAssetRecord> findRequestedReferenceImage(Long seriesId, List<Long> referenceAssetIds) {
+        if (referenceAssetIds == null || referenceAssetIds.isEmpty()) {
+            return Optional.empty();
+        }
+        return referenceAssetIds.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .map(assetRepository::findById)
+                .flatMap(Optional::stream)
+                .filter(asset -> seriesId.equals(asset.seriesId()))
+                .filter(this::isUsableVideoReferenceImage)
+                .findFirst();
+    }
+
+    private boolean isUsableVideoReferenceImage(DramaAssetRecord asset) {
+        String contentType = nullToEmpty(asset.contentType()).toLowerCase(Locale.ROOT);
+        String assetType = nullToEmpty(asset.assetType()).toUpperCase(Locale.ROOT);
+        return contentType.startsWith("image/") || assetType.contains("IMAGE");
+    }
+
     private Path resolveShotDirectory(DramaSeriesRecord series, DramaEpisodeRecord episode, DramaShotRecord shot) throws IOException {
         Path directory = assetService.ensureSeriesRoot(series.id())
                 .resolve(safeFileName("第" + episode.episodeNo() + "集-" + episode.id()))
@@ -278,12 +421,38 @@ public class DramaVideoGenerationService {
         return "PORTRAIT_9_16".equalsIgnoreCase(nullToEmpty(series.aspectRatio())) ? "9:16" : "16:9";
     }
 
-    private int resolveVideoSeconds(DramaShotRecord shot) {
-        Integer seconds = shot.durationSeconds();
-        if (seconds == null || seconds <= 0) {
-            return 5;
+    private String resolveVideoRatio(DramaSeriesRecord series, String ratio) {
+        String value = nullToEmpty(ratio).trim();
+        if ("9:16".equals(value) || "16:9".equals(value)) {
+            return value;
         }
-        return Math.max(4, Math.min(seconds, 12));
+        return resolveVideoRatio(series);
+    }
+
+    private int resolveVideoSeconds(DramaShotRecord shot) {
+        return resolveVideoSeconds(shot.durationSeconds());
+    }
+
+    private int resolveVideoSeconds(Integer seconds) {
+        if (seconds == null || seconds <= 0) {
+            return 10;
+        }
+        return Math.max(9, Math.min(seconds, 12));
+    }
+
+    private String resolveVideoResolution(String resolution) {
+        String value = nullToEmpty(resolution).trim().toLowerCase(Locale.ROOT);
+        if ("480p".equals(value) || "720p".equals(value) || "1080p".equals(value)) {
+            return value;
+        }
+        return "720p";
+    }
+
+    private int resolveVideoFps(Integer fps) {
+        if (fps == null || fps <= 0) {
+            return 24;
+        }
+        return Math.max(12, Math.min(fps, 30));
     }
 
     private int normalizeProviderProgress(Integer providerProgress) {
@@ -307,7 +476,7 @@ public class DramaVideoGenerationService {
         return lower.contains("input reference")
                 && lower.contains("no subtitles")
                 && lower.contains("no watermark")
-                && lower.contains("-generate_audio=false")
+                && lower.contains("-generate_audio=true")
                 && lower.contains("-ratio=");
     }
 
@@ -321,6 +490,8 @@ public class DramaVideoGenerationService {
                         + "；外貌：" + nullToDefault(character.appearance(), "暂无")
                         + "；服装：" + nullToDefault(character.costume(), "暂无")
                         + "；性格：" + nullToDefault(character.personality(), "暂无")
+                        + "；音色来源类型：" + nullToDefault(character.voiceProfileType(), "PROMPT")
+                        + "；音色来源值：" + nullToDefault(character.voiceProfile(), "暂无")
                         + "；关系：" + nullToDefault(character.relationship(), "暂无"))
                 .toList()
                 .toString();

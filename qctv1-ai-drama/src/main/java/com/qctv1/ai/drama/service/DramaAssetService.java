@@ -13,6 +13,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -170,6 +171,54 @@ public class DramaAssetService implements ApplicationRunner {
         }
     }
 
+    public DramaAssetRecord saveCharacterVoiceSample(DramaCharacterRecord character, MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(400, "请先选择音频文件");
+        }
+        String originalName = safeFileName(file.getOriginalFilename() == null ? "voice-sample" : file.getOriginalFilename());
+        String contentType = file.getContentType() == null || file.getContentType().isBlank()
+                ? detectAudioContentType(originalName)
+                : file.getContentType();
+        if (!isAudioFile(originalName, contentType)) {
+            throw new BusinessException(400, "只支持上传音频样例文件");
+        }
+        try {
+            Path voiceDir = ensureSeriesRoot(character.seriesId())
+                    .resolve("角色音色")
+                    .resolve(safeFileName("角色-" + character.id() + "-" + character.name()))
+                    .normalize();
+            ensureInsideAssetRoot(voiceDir);
+            Files.createDirectories(voiceDir);
+
+            String extension = fileExtension(originalName);
+            String fileName = "voice-sample-" + System.currentTimeMillis() + extension;
+            Path target = voiceDir.resolve(fileName).normalize();
+            ensureInsideAssetRoot(target);
+            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+
+            Long assetId = assetRepository.create(
+                    character.seriesId(),
+                    null,
+                    null,
+                    null,
+                    character.id(),
+                    "CHARACTER_VOICE",
+                    "VOICE_SAMPLE",
+                    null,
+                    fileName,
+                    contentType,
+                    target.toString(),
+                    "角色音频样例：" + originalName,
+                    null,
+                    "READY"
+            );
+            return assetRepository.findById(assetId)
+                    .orElseThrow(() -> new BusinessException(500, "音频样例素材保存失败"));
+        } catch (IOException ex) {
+            throw new BusinessException(500, "保存音频样例失败：" + ex.getMessage());
+        }
+    }
+
     public void moveAssetToRecycle(DramaAssetRecord asset) {
         if (asset.localPath() == null || asset.localPath().isBlank()) {
             return;
@@ -262,6 +311,48 @@ public class DramaAssetService implements ApplicationRunner {
     private String safeFileName(String value) {
         String safe = value == null ? "未命名" : value.trim().replaceAll("[\\\\/:*?\"<>|]", "_");
         return safe.isBlank() ? "未命名" : safe;
+    }
+
+    private boolean isAudioFile(String fileName, String contentType) {
+        String lowerName = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        String lowerType = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        return lowerType.startsWith("audio/")
+                || lowerName.endsWith(".mp3")
+                || lowerName.endsWith(".wav")
+                || lowerName.endsWith(".m4a")
+                || lowerName.endsWith(".aac")
+                || lowerName.endsWith(".ogg")
+                || lowerName.endsWith(".flac");
+    }
+
+    private String detectAudioContentType(String fileName) {
+        String lowerName = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        if (lowerName.endsWith(".mp3")) {
+            return "audio/mpeg";
+        }
+        if (lowerName.endsWith(".wav")) {
+            return "audio/wav";
+        }
+        if (lowerName.endsWith(".m4a")) {
+            return "audio/mp4";
+        }
+        if (lowerName.endsWith(".ogg")) {
+            return "audio/ogg";
+        }
+        if (lowerName.endsWith(".flac")) {
+            return "audio/flac";
+        }
+        return MediaType.APPLICATION_OCTET_STREAM_VALUE;
+    }
+
+    private String fileExtension(String fileName) {
+        String safe = fileName == null ? "" : fileName;
+        int index = safe.lastIndexOf('.');
+        if (index < 0 || index == safe.length() - 1) {
+            return "";
+        }
+        String extension = safe.substring(index).toLowerCase(Locale.ROOT);
+        return extension.length() > 12 ? "" : extension;
     }
 
     private String shortText(String value, int maxLength) {

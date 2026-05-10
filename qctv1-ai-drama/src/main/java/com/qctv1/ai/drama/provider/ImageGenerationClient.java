@@ -9,11 +9,11 @@ public interface ImageGenerationClient {
 
     ImageResult generateImage(String prompt);
 
-    ImageResult generateImage(String prompt, String imageSize);
+    ImageResult generateImage(String prompt, String imageSize, String imageQuality, String imageFormat);
 
     ImageResult editImage(String prompt, List<Path> referenceImages);
 
-    ImageResult editImage(String prompt, List<Path> referenceImages, String imageSize);
+    ImageResult editImage(String prompt, List<Path> referenceImages, String imageSize, String imageQuality, String imageFormat);
 
     record ImageResult(
             byte[] content,

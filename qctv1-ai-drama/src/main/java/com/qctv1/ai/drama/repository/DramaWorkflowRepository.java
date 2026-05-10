@@ -277,6 +277,26 @@ public class DramaWorkflowRepository {
                 .eq(DramaShotEntity::getId, shotId));
     }
 
+    public void updateShotImagePrompt(Long shotId, String imagePrompt) {
+        shotMapper.update(null, new LambdaUpdateWrapper<DramaShotEntity>()
+                .set(DramaShotEntity::getImagePrompt, imagePrompt)
+                .set(DramaShotEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaShotEntity::getId, shotId));
+    }
+
+    public void updateShotVideoPrompt(Long shotId, String videoPrompt) {
+        updateShotVideoPrompt(shotId, videoPrompt, null);
+    }
+
+    public void updateShotVideoPrompt(Long shotId, String videoPrompt, Integer durationSeconds) {
+        shotMapper.update(null, new LambdaUpdateWrapper<DramaShotEntity>()
+                .set(DramaShotEntity::getVideoPrompt, videoPrompt)
+                .set(durationSeconds != null && durationSeconds > 0, DramaShotEntity::getDurationSeconds, durationSeconds)
+                .set(DramaShotEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(DramaShotEntity::getId, shotId));
+    }
+
+
     public void clearShotDialoguesByEpisode(Long episodeId) {
         shotMapper.update(null, new LambdaUpdateWrapper<DramaShotEntity>()
                 .set(DramaShotEntity::getDialogue, "")

@@ -4,6 +4,7 @@ import com.qctv1.ai.drama.dto.DramaSeriesCreateRequest;
 import com.qctv1.ai.drama.dto.DramaStorySaveRequest;
 import com.qctv1.ai.drama.service.DramaSeriesService;
 import com.qctv1.ai.drama.support.ApiResponse;
+import com.qctv1.ai.drama.vo.DramaAssetVo;
 import com.qctv1.ai.drama.vo.DramaSeriesDetailVo;
 import com.qctv1.ai.drama.vo.DramaSeriesSummaryVo;
 import jakarta.validation.Valid;
@@ -38,9 +39,19 @@ public class DramaSeriesController {
         return ApiResponse.success(seriesService.list());
     }
 
+    @PutMapping("/{id}")
+    public ApiResponse<DramaSeriesSummaryVo> update(@PathVariable Long id, @Valid @RequestBody DramaSeriesCreateRequest request) {
+        return ApiResponse.success(seriesService.update(id, request));
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<DramaSeriesDetailVo> detail(@PathVariable Long id) {
         return ApiResponse.success(seriesService.detail(id));
+    }
+
+    @GetMapping("/{id}/assets/images")
+    public ApiResponse<List<DramaAssetVo>> imageAssets(@PathVariable Long id) {
+        return ApiResponse.success(seriesService.listImageAssets(id));
     }
 
     @PutMapping("/{id}/story")

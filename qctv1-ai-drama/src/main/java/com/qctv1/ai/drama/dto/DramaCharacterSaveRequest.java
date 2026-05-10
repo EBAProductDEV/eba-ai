@@ -8,6 +8,8 @@ public record DramaCharacterSaveRequest(
         String appearance,
         String costume,
         String personality,
+        String voiceProfileType,
+        String voiceProfile,
         String relationship
 ) {
 }

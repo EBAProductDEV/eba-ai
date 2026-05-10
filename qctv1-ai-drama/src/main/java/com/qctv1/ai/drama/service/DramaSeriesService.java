@@ -28,6 +28,7 @@ import com.qctv1.ai.drama.vo.DramaShotVo;
 import com.qctv1.ai.drama.vo.DramaTaskVo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -101,6 +102,26 @@ public class DramaSeriesService {
         return seriesRepository.listByUserId(DEFAULT_USER_ID).stream().map(this::toSummary).toList();
     }
 
+    @Transactional
+    public DramaSeriesSummaryVo update(Long id, DramaSeriesCreateRequest request) {
+        ensureSeriesExists(id);
+        seriesRepository.updateBasic(
+                id,
+                DEFAULT_USER_ID,
+                request.name(),
+                request.aspectRatio(),
+                request.type(),
+                request.intro(),
+                request.theme(),
+                request.style(),
+                request.totalEpisodes(),
+                request.episodeDurationMinutes()
+        );
+        DramaSeriesRecord updated = seriesRepository.findByIdAndUserId(id, DEFAULT_USER_ID)
+                .orElseThrow(() -> new BusinessException(404, "短剧项目不存在"));
+        return toSummary(updated);
+    }
+
     public DramaSeriesDetailVo detail(Long id) {
         DramaSeriesRecord series = seriesRepository.findByIdAndUserId(id, DEFAULT_USER_ID)
                 .orElseThrow(() -> new BusinessException(404, "短剧项目不存在"));
@@ -114,6 +135,14 @@ public class DramaSeriesService {
                 series.totalEpisodes(), series.episodeDurationMinutes(), series.status(), series.createdAt(),
                 characters, episodes, assets, tasks
         );
+    }
+
+    public List<DramaAssetVo> listImageAssets(Long seriesId) {
+        ensureSeriesExists(seriesId);
+        return assetRepository.listRecentBySeries(seriesId, 500).stream()
+                .filter(asset -> asset.contentType() != null && asset.contentType().toLowerCase().startsWith("image/"))
+                .map(this::toAssetVo)
+                .toList();
     }
 
     @Transactional
@@ -142,6 +171,25 @@ public class DramaSeriesService {
     public List<DramaAssetVo> listCharacterAssets(Long seriesId, Long characterId) {
         ensureCharacterExists(seriesId, characterId);
         return assetRepository.listByCharacter(characterId, 50).stream().map(this::toAssetVo).toList();
+    }
+
+    @Transactional
+    public DramaAssetVo uploadCharacterVoiceSample(Long seriesId, Long characterId, MultipartFile file) {
+        DramaCharacterRecord character = ensureCharacterExists(seriesId, characterId);
+        DramaAssetRecord asset = assetService.saveCharacterVoiceSample(character, file);
+        characterRepository.update(
+                seriesId,
+                characterId,
+                character.name(),
+                character.profile(),
+                character.appearance(),
+                character.costume(),
+                character.personality(),
+                "AUDIO_ASSET_ID",
+                String.valueOf(asset.id()),
+                character.relationship()
+        );
+        return toAssetVo(asset);
     }
 
     @Transactional
@@ -239,6 +287,8 @@ public class DramaSeriesService {
                     character.appearance(),
                     character.costume(),
                     character.personality(),
+                    "PROMPT",
+                    character.voiceProfile(),
                     character.relationship()
             )));
         }
@@ -256,6 +306,8 @@ public class DramaSeriesService {
                 request.appearance(),
                 request.costume(),
                 request.personality(),
+                normalizeVoiceProfileType(request.voiceProfileType()),
+                request.voiceProfile(),
                 request.relationship()
         );
         return toCharacterVo(record);
@@ -272,6 +324,8 @@ public class DramaSeriesService {
                 request.appearance(),
                 request.costume(),
                 request.personality(),
+                normalizeVoiceProfileType(request.voiceProfileType()),
+                request.voiceProfile(),
                 request.relationship()
         );
         if (!updated) {
@@ -310,7 +364,7 @@ public class DramaSeriesService {
 
     private DramaSeriesSummaryVo toSummary(DramaSeriesRecord record) {
         return new DramaSeriesSummaryVo(
-                record.id(), record.name(), record.aspectRatio(), record.type(), record.intro(), record.style(),
+                record.id(), record.name(), record.aspectRatio(), record.type(), record.intro(), record.theme(), record.style(),
                 record.totalEpisodes(), record.episodeDurationMinutes(), record.status(), record.createdAt()
         );
     }
@@ -329,7 +383,8 @@ public class DramaSeriesService {
     private DramaCharacterVo toCharacterVo(DramaCharacterRecord record) {
         return new DramaCharacterVo(
                 record.id(), record.seriesId(), record.name(), record.profile(), record.appearance(),
-                record.costume(), record.personality(), record.relationship(), record.visualProfile(),
+                record.costume(), record.personality(), normalizeVoiceProfileType(record.voiceProfileType()),
+                record.voiceProfile(), record.relationship(), record.visualProfile(),
                 record.primaryReferenceAssetId(), record.avatarAssetId(),
                 resolveAssetAccessUrl(record.primaryReferenceAssetId()),
                 resolveAssetAccessUrl(record.avatarAssetId()),
@@ -395,6 +450,8 @@ public class DramaSeriesService {
                     imageType.toLowerCase(Locale.ROOT),
                     "image/svg+xml",
                     "1024x1792",
+                    "low",
+                    "jpeg",
                     saveDirectory
             );
         } catch (IOException ex) {
@@ -586,7 +643,8 @@ public class DramaSeriesService {
         return """
                 你是短剧角色统筹。请根据下面的短剧项目和小说式故事原文，提取并生成项目级角色。
                 角色属于整个短剧项目，不属于某一集。请覆盖主角、反派、关键配角、重要关系人物。
-                每个角色必须包含：角色名称、人设定位、外貌特点、常用服装、性格特点、人物关系。
+                每个角色必须包含：角色名称、人设定位、外貌特点、常用服装、性格特点、音色方案、人物关系。
+                音色方案默认生成提示词类型，必须结合角色身份、性格、短剧类型和剧情任务生成，供后续视频对白/旁白保持专属声音一致性。请包含 3-5 个音色标签和一段可执行的声音描述。
                 只输出下面格式，不要输出额外解释：
 
                 <CHARACTER>
@@ -595,6 +653,7 @@ public class DramaSeriesService {
                 <APPEARANCE>年龄感、发型、五官、体态、气质、可用于图片生成的视觉特点</APPEARANCE>
                 <COSTUME>常用服装、颜色、材质、时代/职业特征</COSTUME>
                 <PERSONALITY>性格关键词和行为特点</PERSONALITY>
+                <VOICE_PROFILE>标签：清冷、克制、低语感；描述：成年女性声线，音色清透偏冷，语速略慢，咬字清晰，情绪长期压抑但关键台词带锋芒，适合短剧视频中的对白和旁白一致性。</VOICE_PROFILE>
                 <RELATIONSHIP>与主角、反派、配角之间的关系和冲突</RELATIONSHIP>
                 </CHARACTER>
 
@@ -631,6 +690,7 @@ public class DramaSeriesService {
                     extractTag(block, "APPEARANCE"),
                     extractTag(block, "COSTUME"),
                     extractTag(block, "PERSONALITY"),
+                    extractTag(block, "VOICE_PROFILE"),
                     extractTag(block, "RELATIONSHIP")
             ));
             cursor = end + "</CHARACTER>".length();
@@ -658,6 +718,7 @@ public class DramaSeriesService {
                         "形象需要清晰、有记忆点，适合作为角色图和视频人物的一致性基准。",
                         "服装应贴合项目类型和时代背景，颜色保持稳定，便于后续生成统一视觉。",
                         "有目标、有弱点，面对压力时逐步完成从被动到主动的转变。",
+                        "标签：坚定、压抑、成长感；描述：成年声线，音色干净有韧性，语速中等偏稳，日常克制低声，情绪爆发时咬字更重，适合承载反击、独白和关键对白。",
                         "与反派形成主要冲突，与关键配角形成帮助、误会或情感牵引。"
                 ),
                 new GeneratedCharacter(
@@ -666,6 +727,7 @@ public class DramaSeriesService {
                         "气质压迫感强，表情、姿态和造型应体现控制欲或危险感。",
                         "服装更利落、强势，适合与主角形成视觉对比。",
                         "精明、强势、目标明确，行为上持续给主角施压。",
+                        "标签：低沉、压迫、掌控感；描述：成年声线，音色偏低且有冷硬质感，语速从容偏慢，尾音收紧，适合威胁、试探和反转台词。",
                         "与主角存在利益、身份、情感或秘密上的直接冲突。"
                 ),
                 new GeneratedCharacter(
@@ -674,6 +736,7 @@ public class DramaSeriesService {
                         "视觉上需要和主角、反派区分明显，便于观众快速识别。",
                         "服装可以更生活化或职业化，突出其剧情功能。",
                         "立场可能摇摆，既能提供帮助，也能制造新的问题。",
+                        "标签：自然、机敏、亲近感；描述：成年声线，音色明亮自然，语速灵活，情绪切换快，适合信息传递、生活化对白和推动误会的桥段。",
                         "与主角关系密切，是推动剧情转折的重要人物。"
                 )
         );
@@ -691,15 +754,25 @@ public class DramaSeriesService {
         return value == null || value.isBlank() ? defaultValue : value;
     }
 
+    private String normalizeVoiceProfileType(String value) {
+        if (value == null || value.isBlank()) {
+            return "PROMPT";
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        if ("VOICE_ID".equals(normalized) || "AUDIO_ASSET_ID".equals(normalized) || "PROMPT".equals(normalized)) {
+            return normalized;
+        }
+        return "PROMPT";
+    }
+
     private record GeneratedCharacter(
             String name,
             String profile,
             String appearance,
             String costume,
             String personality,
+            String voiceProfile,
             String relationship
     ) {
     }
 }
-
-

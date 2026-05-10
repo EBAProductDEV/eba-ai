@@ -28,6 +28,8 @@ public class DramaCharacterRepository {
             String appearance,
             String costume,
             String personality,
+            String voiceProfileType,
+            String voiceProfile,
             String relationship
     ) {
         LocalDateTime now = LocalDateTime.now();
@@ -38,6 +40,8 @@ public class DramaCharacterRepository {
         entity.setAppearance(appearance);
         entity.setCostume(costume);
         entity.setPersonality(personality);
+        entity.setVoiceProfileType(voiceProfileType);
+        entity.setVoiceProfile(voiceProfile);
         entity.setRelationship(relationship);
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
@@ -84,6 +88,8 @@ public class DramaCharacterRepository {
             String appearance,
             String costume,
             String personality,
+            String voiceProfileType,
+            String voiceProfile,
             String relationship
     ) {
         LambdaUpdateWrapper<DramaCharacterEntity> wrapper = new LambdaUpdateWrapper<DramaCharacterEntity>()
@@ -92,6 +98,8 @@ public class DramaCharacterRepository {
                 .set(DramaCharacterEntity::getAppearance, appearance)
                 .set(DramaCharacterEntity::getCostume, costume)
                 .set(DramaCharacterEntity::getPersonality, personality)
+                .set(DramaCharacterEntity::getVoiceProfileType, voiceProfileType)
+                .set(DramaCharacterEntity::getVoiceProfile, voiceProfile)
                 .set(DramaCharacterEntity::getRelationship, relationship)
                 .set(DramaCharacterEntity::getUpdatedAt, LocalDateTime.now())
                 .eq(DramaCharacterEntity::getId, characterId)
@@ -129,6 +137,8 @@ public class DramaCharacterRepository {
                 entity.getAppearance(),
                 entity.getCostume(),
                 entity.getPersonality(),
+                entity.getVoiceProfileType(),
+                entity.getVoiceProfile(),
                 entity.getRelationship(),
                 entity.getVisualProfile(),
                 entity.getPrimaryReferenceAssetId(),

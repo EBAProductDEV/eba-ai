@@ -33,4 +33,15 @@ public class DramaAsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean("dramaDraftTaskExecutor")
+    public TaskExecutor dramaDraftTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("drama-draft-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(30);
+        executor.initialize();
+        return executor;
+    }
 }

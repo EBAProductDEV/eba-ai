@@ -51,15 +51,17 @@ management:
 logging:
   level:
     root: INFO
-    com.qctv1.ai.drama: DEBUG
-    com.qctv1.ai.drama.mapper: DEBUG
-    com.baomidou.mybatisplus: DEBUG
-    org.mybatis: DEBUG
-    org.apache.ibatis: DEBUG
-    org.springframework.web: DEBUG
-    org.springframework.web.servlet.DispatcherServlet: DEBUG
-    org.springframework.jdbc.core: DEBUG
-    org.springframework.transaction: DEBUG
+    com.qctv1.ai.drama: INFO
+    com.qctv1.ai.drama.mapper: INFO
+    com.baomidou.mybatisplus: WARN
+    org.mybatis: WARN
+    org.apache.ibatis: WARN
+    org.springframework.web: INFO
+    org.springframework.web.servlet.DispatcherServlet: INFO
+    org.springframework.jdbc: WARN
+    org.springframework.jdbc.core: WARN
+    org.springframework.transaction: WARN
+    jdk.internal.httpclient.debug: OFF
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{80} - %msg%n"
 
@@ -68,12 +70,26 @@ app:
     drama:
       # 固定使用中文素材根目录。接口读取时会校验路径必须留在该根目录内。
       asset-root: "D:/AI视频"
+      # 剪映初稿免费素材库和每集导出包目录。
+      material-root: ${DRAMA_MATERIAL_ROOT:D:/AI视频/剪辑素材文件夹}
+      ffmpeg-path: ${DRAMA_FFMPEG_PATH:ffmpeg}
+      ffprobe-path: ${DRAMA_FFPROBE_PATH:ffprobe}
       text:
         provider: openai-compatible
-        base-url: ${DRAMA_TEXT_BASE_URL:https://zen-ai.top/v1}
+        base-url: ${DRAMA_TEXT_BASE_URL:https://apixg.squarefaceicon.org/v1}
         completions-path: ${DRAMA_TEXT_COMPLETIONS_PATH:/chat/completions}
-        api-key: "sk-FbmIuQzi35Iu1tZfZlBhwxU2FsR1G7nQVRssJdfpzBo9Wh9w"
-        model: "gpt-5.5"
+        api-key: "sk-HMOoi37qdP9A1IYWFpMQoiCHP5v6u2Ka3sgXDjpcL2ttG1Hu"
+        model: "gpt-5.4-mini"
+      vision:
+        provider: openai-compatible
+        base-url: ${DRAMA_VISION_BASE_URL:${DRAMA_TEXT_BASE_URL:https://apixg.squarefaceicon.org/v1}}
+        completions-path: ${DRAMA_VISION_COMPLETIONS_PATH:/chat/completions}
+        api-key: "sk-HMOoi37qdP9A1IYWFpMQoiCHP5v6u2Ka3sgXDjpcL2ttG1Hu"
+        model: ${DRAMA_VISION_MODEL:gpt-5.4-mini}
+        rough-model: ${DRAMA_VISION_ROUGH_MODEL:gpt-5.4-nano}
+        analysis-model: ${DRAMA_VISION_ANALYSIS_MODEL:gpt-5.4-mini}
+        review-model: ${DRAMA_VISION_REVIEW_MODEL:gpt-5.5}
+        max-frames-per-shot: ${DRAMA_VISION_MAX_FRAMES_PER_SHOT:3}
       image:
         provider: openai-compatible
 #       https://api-direct.bbww.top、https://api.bbww.top/v1
@@ -112,5 +128,4 @@ mybatis-plus:
       id-type: auto
   configuration:
     map-underscore-to-camel-case: true
-    # 直接把 SQL、参数、结果打印到控制台，排查接口问题最直观。
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl

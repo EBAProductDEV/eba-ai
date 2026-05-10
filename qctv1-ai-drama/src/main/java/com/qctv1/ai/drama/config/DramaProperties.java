@@ -8,8 +8,20 @@ public class DramaProperties {
     /** 素材根目录，固定为 D:/AI视频。 */
     private String assetRoot = "D:/AI视频";
 
+    /** 剪映初稿素材库根目录，存放免费 BGM、音效、音色和每集导出包。 */
+    private String materialRoot = "D:/AI视频/剪辑素材文件夹";
+
+    /** FFmpeg 可执行文件；为空时从系统 PATH 查找。 */
+    private String ffmpegPath = "";
+
+    /** FFprobe 可执行文件；为空时从系统 PATH 查找。 */
+    private String ffprobePath = "";
+
     /** 文本生成模型配置，用于分集大纲、脚本、镜头提示词等。 */
     private ModelConfig text = new ModelConfig();
+
+    /** 多模态视觉分析模型配置，用于镜头关键帧动作识别。 */
+    private VisionConfig vision = new VisionConfig();
 
     /** 图片生成模型配置，用于角色图、场景图、镜头参考图。 */
     private ModelConfig image = new ModelConfig();
@@ -31,12 +43,44 @@ public class DramaProperties {
         this.assetRoot = assetRoot;
     }
 
+    public String getMaterialRoot() {
+        return materialRoot;
+    }
+
+    public void setMaterialRoot(String materialRoot) {
+        this.materialRoot = materialRoot;
+    }
+
+    public String getFfmpegPath() {
+        return ffmpegPath;
+    }
+
+    public void setFfmpegPath(String ffmpegPath) {
+        this.ffmpegPath = ffmpegPath;
+    }
+
+    public String getFfprobePath() {
+        return ffprobePath;
+    }
+
+    public void setFfprobePath(String ffprobePath) {
+        this.ffprobePath = ffprobePath;
+    }
+
     public ModelConfig getText() {
         return text;
     }
 
     public void setText(ModelConfig text) {
         this.text = text;
+    }
+
+    public VisionConfig getVision() {
+        return vision;
+    }
+
+    public void setVision(VisionConfig vision) {
+        this.vision = vision;
     }
 
     public ModelConfig getImage() {
@@ -212,6 +256,45 @@ public class DramaProperties {
 
         public void setImagePartialImages(Integer imagePartialImages) {
             this.imagePartialImages = imagePartialImages;
+        }
+    }
+
+    public static class VisionConfig extends ModelConfig {
+        private String roughModel = "gpt-5.4-nano";
+        private String analysisModel = "gpt-5.4-mini";
+        private String reviewModel = "gpt-5.5";
+        private Integer maxFramesPerShot = 3;
+
+        public String getRoughModel() {
+            return roughModel;
+        }
+
+        public void setRoughModel(String roughModel) {
+            this.roughModel = roughModel;
+        }
+
+        public String getAnalysisModel() {
+            return analysisModel;
+        }
+
+        public void setAnalysisModel(String analysisModel) {
+            this.analysisModel = analysisModel;
+        }
+
+        public String getReviewModel() {
+            return reviewModel;
+        }
+
+        public void setReviewModel(String reviewModel) {
+            this.reviewModel = reviewModel;
+        }
+
+        public Integer getMaxFramesPerShot() {
+            return maxFramesPerShot;
+        }
+
+        public void setMaxFramesPerShot(Integer maxFramesPerShot) {
+            this.maxFramesPerShot = maxFramesPerShot;
         }
     }
 

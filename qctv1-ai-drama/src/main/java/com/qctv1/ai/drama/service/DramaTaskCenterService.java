@@ -21,6 +21,7 @@ public class DramaTaskCenterService {
 
     private static final List<String> IMAGE_STEPS = List.of("提示词翻译组装中", "AI生图中", "图片下载组装中", "保存素材记录");
     private static final List<String> GENERAL_STEPS = List.of("排队中", "执行中", "保存结果", "完成");
+    private static final List<String> JIANYING_DRAFT_STEPS = List.of("抽帧分析", "素材推荐", "配音合成", "打包导出");
 
     private static final Map<String, String> IMAGE_TYPE_LABELS = Map.of(
             "PORTRAIT", "全身定妆照",
@@ -75,7 +76,8 @@ public class DramaTaskCenterService {
                 : characterRepository.findById(task.characterId()).map(DramaCharacterRecord::name).orElse("未知角色");
         String assetSubType = resolveAssetSubType(task);
         boolean imageTask = isImageTask(task, assetSubType);
-        List<String> steps = imageTask ? IMAGE_STEPS : GENERAL_STEPS;
+        boolean jianyingDraftTask = isJianyingDraftTask(task);
+        List<String> steps = jianyingDraftTask ? JIANYING_DRAFT_STEPS : (imageTask ? IMAGE_STEPS : GENERAL_STEPS);
         return new DramaTaskCenterItemVo(
                 task.id(),
                 task.seriesId(),
@@ -95,8 +97,8 @@ public class DramaTaskCenterService {
                 task.status(),
                 task.progress(),
                 task.stage(),
-                stageText(task.stage(), task.status(), imageTask),
-                currentStep(task.stage(), task.status(), imageTask),
+                stageText(task.stage(), task.status(), imageTask, jianyingDraftTask),
+                currentStep(task.stage(), task.status(), imageTask, jianyingDraftTask),
                 steps,
                 task.errorMessage(),
                 task.createdAt(),
@@ -129,7 +131,14 @@ public class DramaTaskCenterService {
                 || assetSubType != null;
     }
 
+    private boolean isJianyingDraftTask(DramaTaskRecord task) {
+        return task.taskType() != null && task.taskType().contains("JIANYING_DRAFT");
+    }
+
     private String buildTitle(DramaTaskRecord task, String assetSubType) {
+        if (isJianyingDraftTask(task)) {
+            return "剪映初稿任务 #" + task.id();
+        }
         if (isImageTask(task, assetSubType)) {
             return "图片生成任务 #" + task.id();
         }
@@ -173,6 +182,9 @@ public class DramaTaskCenterService {
         if (taskType.contains("VIDEO")) {
             return "视频生成任务";
         }
+        if (taskType.contains("JIANYING_DRAFT")) {
+            return "剪映初稿生成任务";
+        }
         if (taskType.contains("STORY")) {
             return "故事生成任务";
         }
@@ -182,12 +194,23 @@ public class DramaTaskCenterService {
         return taskType;
     }
 
-    private String stageText(String stage, String status, boolean imageTask) {
+    private String stageText(String stage, String status, boolean imageTask, boolean jianyingDraftTask) {
         if ("FAILED".equals(status) || "FAILED".equals(stage)) {
             return "任务失败";
         }
         if ("SUCCEEDED".equals(status) || "DONE".equals(stage)) {
             return "任务完成";
+        }
+        if (jianyingDraftTask) {
+            return switch (nullToEmpty(stage)) {
+                case "QUEUED" -> "准备素材目录";
+                case "ANALYZING" -> "抽帧分析镜头";
+                case "RECOMMENDING" -> "推荐本地素材";
+                case "DUBBING" -> "生成配音";
+                case "COMPOSITING" -> "合成参考成片";
+                case "PACKAGING" -> "打包剪映素材";
+                default -> "生成剪映初稿中";
+            };
         }
         if (!imageTask) {
             return switch (nullToEmpty(stage)) {
@@ -206,12 +229,21 @@ public class DramaTaskCenterService {
         };
     }
 
-    private Integer currentStep(String stage, String status, boolean imageTask) {
+    private Integer currentStep(String stage, String status, boolean imageTask, boolean jianyingDraftTask) {
         if ("FAILED".equals(status) || "FAILED".equals(stage)) {
             return imageTask ? 1 : 0;
         }
         if ("SUCCEEDED".equals(status) || "DONE".equals(stage)) {
             return imageTask ? 3 : 3;
+        }
+        if (jianyingDraftTask) {
+            return switch (nullToEmpty(stage)) {
+                case "ANALYZING" -> 0;
+                case "RECOMMENDING" -> 1;
+                case "DUBBING", "COMPOSITING" -> 2;
+                case "PACKAGING" -> 3;
+                default -> 0;
+            };
         }
         if (!imageTask) {
             return switch (nullToEmpty(stage)) {

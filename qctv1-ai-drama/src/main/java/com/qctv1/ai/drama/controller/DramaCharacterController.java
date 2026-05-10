@@ -15,7 +15,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -42,6 +44,15 @@ public class DramaCharacterController {
     @GetMapping("/{characterId}/assets")
     public ApiResponse<List<DramaAssetVo>> listAssets(@PathVariable Long seriesId, @PathVariable Long characterId) {
         return ApiResponse.success(seriesService.listCharacterAssets(seriesId, characterId));
+    }
+
+    @PostMapping("/{characterId}/voice/sample")
+    public ApiResponse<DramaAssetVo> uploadVoiceSample(
+            @PathVariable Long seriesId,
+            @PathVariable Long characterId,
+            @RequestPart("file") MultipartFile file
+    ) {
+        return ApiResponse.success(seriesService.uploadCharacterVoiceSample(seriesId, characterId, file));
     }
 
     @PostMapping

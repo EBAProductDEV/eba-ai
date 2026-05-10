@@ -125,6 +125,8 @@ public class DramaImageGenerationService {
                     context.fileNamePrefix(),
                     context.contentType(),
                     context.imageSize(),
+                    context.imageQuality(),
+                    context.imageFormat(),
                     context.saveDirectory()
             ));
         } catch (Exception ex) {
@@ -234,9 +236,9 @@ public class DramaImageGenerationService {
                 );
                 List<Path> referenceImages = resolveReferenceImages(context);
                 if (referenceImages.isEmpty()) {
-                    return imageGenerationClient.generateImage(context.prompt(), context.imageSize());
+                    return imageGenerationClient.generateImage(context.prompt(), context.imageSize(), context.imageQuality(), context.imageFormat());
                 }
-                return imageGenerationClient.editImage(context.prompt(), referenceImages, context.imageSize());
+                return imageGenerationClient.editImage(context.prompt(), referenceImages, context.imageSize(), context.imageQuality(), context.imageFormat());
             } catch (RuntimeException ex) {
                 lastException = ex;
                 if (attempt >= MODEL_IMAGE_MAX_ATTEMPTS || !isTransientProviderError(ex)) {
